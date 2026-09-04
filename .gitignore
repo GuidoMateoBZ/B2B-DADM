@@ -1,1 +1,4 @@
 /.idea
+**/generated_plugin_registrant.*
+**/generated_plugins.*
+**/GeneratedPluginRegistrant.*
