@@ -44,9 +44,9 @@
     </queries>
 
     <!-- ========== Nearby Connections: Bluetooth ========== -->
-    <!-- Android ≤ 11 (API 30): permisos legacy de Bluetooth -->
-    <uses-permission android:maxSdkVersion="30" android:name="android.permission.BLUETOOTH" />
-    <uses-permission android:maxSdkVersion="30" android:name="android.permission.BLUETOOTH_ADMIN" />
+    <!-- Permisos legacy de Bluetooth (no se usa maxSdkVersion porque Play Services a veces los exige) -->
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" />
 
     <!-- Android 12+ (API 31): permisos granulares de Bluetooth -->
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
@@ -54,18 +54,15 @@
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
 
     <!-- ========== Nearby Connections: Wi-Fi ========== -->
-
-    <!-- Android ≤ 12 (API 31) -->
-    <uses-permission android:maxSdkVersion="31" android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:maxSdkVersion="31" android:name="android.permission.CHANGE_WIFI_STATE" />
+    <!-- Wi-Fi (requerido por Google Play Services en todas las versiones para P2P / Hotspot / Direct) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
 
     <!-- Android 13+ (API 33) -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" />
 
     <!-- ========== Nearby Connections: Ubicación ========== -->
-
-    <!-- Requerida porque el escaneo BLE puede revelar ubicación -->
-    <uses-permission android:maxSdkVersion="28" android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Requerida porque el escaneo BLE y Wi-Fi puede revelar ubicación -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    
 </manifest>

@@ -62,10 +62,10 @@ class NearbyProvider extends ChangeNotifier {
     _myNodeId = nodeId;
 
     // Pedir permisos en runtime
-    final granted = await PermissionService.requestNearbyPermissions();
-    if (!granted) {
+    final permissionResult = await PermissionService.requestPermissionsDetailed();
+    if (!permissionResult.isGranted) {
       _state = NearbyState.error;
-      _errorMessage = 'Se necesitan todos los permisos para usar Nearby Chat.';
+      _errorMessage = permissionResult.missingMessage;
       notifyListeners();
       return;
     }
@@ -82,8 +82,13 @@ class NearbyProvider extends ChangeNotifier {
 
     if (!advResult && !disResult) {
       _state = NearbyState.error;
-      _errorMessage = 'No se pudo iniciar la búsqueda. Verificá que el Bluetooth y el GPS estén encendidos.';
+      _errorMessage = _service.lastError ??
+          'No se pudo iniciar la búsqueda. Verificá que el Bluetooth y el GPS estén encendidos.';
       notifyListeners();
+    } else if (!advResult || !disResult) {
+      debugPrint(
+        '[NearbyProvider] Parcialmente iniciado: adv=$advResult, dis=$disResult. Detalle: ${_service.lastError}',
+      );
     }
   }
 

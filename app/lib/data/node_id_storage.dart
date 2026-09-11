@@ -10,9 +10,10 @@ class NodeIdStorage {
   Future<String> getId() async {
     final preferences = await SharedPreferences.getInstance();
     final existing = preferences.getString(_key);
-    if (existing != null) return existing;
-    
-    final newId = const Uuid().v4();
+    if (existing != null && existing.length < 20) return existing;
+    // Generamos un id corto (13 caracteres aprox) para asegurar que el userName no exceda límites BLE
+    final parts = const Uuid().v4().split('-');
+    final newId = '${parts[0]}-${parts[1]}';
     await preferences.setString(_key, newId);
     return newId;
   }

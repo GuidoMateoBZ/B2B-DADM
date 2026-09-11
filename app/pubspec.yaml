@@ -41,6 +41,7 @@ dependencies:
   # Dependencias para mensajería por BLE usando Google Nearby Connections
   nearby_connections: ^4.3.0 # API de Nearby Connections
   permission_handler: ^11.0.0 # Solicitud de permisos en runtime
+  device_info_plus: ^13.2.0
 
 dev_dependencies:
   flutter_test:

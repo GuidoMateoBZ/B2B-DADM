@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 
 /// Wrapper sobre la API de Nearby Connections.
@@ -32,13 +32,17 @@ class NearbyService {
   /// Se invoca cuando se recibe un mensaje de texto de un endpoint conectado.
   void Function(String endpointId, String message)? onMessageReceived;
 
+  /// Último mensaje de error capturado en operaciones nativas.
+  String? lastError;
+
   // ── Advertising ──
 
   /// Comienza a anunciar este dispositivo para que otros lo descubran.
   /// [userName] es el nombre visible (usamos el Node ID).
   Future<bool> startAdvertising(String userName) async {
+    lastError = null;
     try {
-      return await _nearby.startAdvertising(
+      final success = await _nearby.startAdvertising(
         userName,
         strategy,
         onConnectionInitiated: _handleConnectionInitiated,
@@ -46,7 +50,14 @@ class NearbyService {
         onDisconnected: _handleDisconnected,
         serviceId: serviceId,
       );
-    } catch (e) {
+      debugPrint('[NearbyService] startAdvertising retorno: $success');
+      if (!success && lastError == null) {
+        lastError = 'Google Play Services rechazó startAdvertising (retornó false).';
+      }
+      return success;
+    } catch (e, stack) {
+      lastError = 'startAdvertising error: $e';
+      debugPrint('[NearbyService] Excepción en startAdvertising: $e\n$stack');
       return false;
     }
   }
@@ -55,7 +66,9 @@ class NearbyService {
   Future<void> stopAdvertising() async {
     try {
       await _nearby.stopAdvertising();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[NearbyService] Error en stopAdvertising: $e');
+    }
   }
 
   // ── Discovery ──
@@ -63,7 +76,7 @@ class NearbyService {
   /// Comienza a buscar dispositivos cercanos que estén haciendo advertising.
   Future<bool> startDiscovery(String userName) async {
     try {
-      return await _nearby.startDiscovery(
+      final success = await _nearby.startDiscovery(
         userName,
         strategy,
         onEndpointFound: (String endpointId, String userName, String serviceId) {
@@ -76,7 +89,16 @@ class NearbyService {
         },
         serviceId: serviceId,
       );
-    } catch (e) {
+      debugPrint('[NearbyService] startDiscovery retorno: $success');
+      if (!success) {
+        final msg = 'Google Play Services rechazó startDiscovery (retornó false).';
+        lastError = (lastError != null) ? '$lastError | $msg' : msg;
+      }
+      return success;
+    } catch (e, stack) {
+      final msg = 'startDiscovery error: $e';
+      lastError = (lastError != null) ? '$lastError | $msg' : msg;
+      debugPrint('[NearbyService] Excepción en startDiscovery: $e\n$stack');
       return false;
     }
   }

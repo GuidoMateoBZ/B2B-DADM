@@ -1,5 +1,6 @@
 import 'package:app/providers/nearby_provider.dart';
 import 'package:app/providers/node_id_provider.dart';
+import 'package:app/services/nearby_permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -107,12 +108,39 @@ class _ChatScreenState extends State<ChatScreen> {
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(
-                          nearbyProvider.errorMessage!,
-                          style: TextStyle(
-                            color:
-                                Theme.of(context).colorScheme.onErrorContainer,
-                          ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              nearbyProvider.errorMessage!,
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onErrorContainer,
+                              ),
+                            ),
+                            if (nearbyProvider.errorMessage!
+                                .toLowerCase()
+                                .contains('permiso')) ...[
+                              const SizedBox(height: 4),
+                              TextButton(
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: const Size(0, 28),
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                onPressed: () =>
+                                    PermissionService.openSettings(),
+                                child: const Text(
+                                  'Abrir Ajustes de la App',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
