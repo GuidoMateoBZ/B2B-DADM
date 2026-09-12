@@ -298,12 +298,17 @@ class BroadcastMessage {
 ## 7. Hitos Sugeridos
 
 ### Hito 1: Chat Directo
-- [ ] Configurar permisos Android (Manifest + build.gradle)
-- [ ] Agregar dependencias (`nearby_connections`, `permission_handler`)
+- [x] Configurar permisos Android (Manifest + build.gradle)
+- [x] Agregar dependencias (`nearby_connections`, `permission_handler`)
 - [ ] Crear `NearbyService` con advertising, discovery, conexión, envío/recepción de bytes
-- [ ] Crear `NearbyProvider` con estado reactivo
-- [ ] Crear `ChatScreen` con discovery + chat 1-a-1 directo
-- [ ] Probar en 2 dispositivos físicos
+  - [ ] Revisar Wi-Fi Direct (que no se active solo), limitar a BLE preferiblemente
+  - [ ] Verificar si tiene Bluetooth o Wi-Fi activados para su uso
+- [x] Crear `NearbyProvider` con estado reactivo
+- [x] Crear `ChatScreen` con discovery + chat 1-a-1 directo
+  - [ ] Si existe un límite de caracteres en el mensaje, mostrarlo.
+    - [ ] Fragmentar mensaje al enviarlo ??? 
+  - [ ] Alerta / Notificación de mensaje nuevo
+- [x] Probar en 2 dispositivos físicos
 
 ### Hito 2: Routing Multi-Hop
 - [ ] Definir formato de mensaje con headers (`from`, `to`, `ttl`, `messageId`)
