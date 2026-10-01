@@ -65,4 +65,7 @@
     <!-- Requerida porque el escaneo BLE y Wi-Fi puede revelar ubicación -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+
+     <!-- ========== Notificaciones ========== -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 </manifest>

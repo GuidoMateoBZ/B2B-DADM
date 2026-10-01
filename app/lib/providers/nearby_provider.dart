@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 
 import '../data/chat_message.dart';
 import '../data/discovered_endpoint.dart';
 import '../data/nearby_service.dart';
+import '../services/local_notification_service.dart';
 import '../services/nearby_permission_handler.dart';
 
 /// Estados posibles del sistema Nearby Connections.
@@ -220,6 +223,11 @@ class NearbyProvider extends ChangeNotifier {
 
     _messages.add(chatMessage);
     notifyListeners();
+    unawaited(
+      localNotificationService.showIncomingMessage(
+        _connectedEndpointName ?? endpointId,
+      ),
+    );
   }
 
   // ── Cleanup ──

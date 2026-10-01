@@ -21,6 +21,25 @@ class PermissionResult {
 }
 
 class PermissionService {
+  /// Solicita el permiso de notificaciones solo en Android 13+
+  static Future<void> requestNotificationPermission() async {
+    if (!Platform.isAndroid) return;
+
+    try {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (androidInfo.version.sdkInt < 33) return;
+
+      final permission = Permission.notification;
+      final status = await permission.status;
+      if (status.isGranted || status.isPermanentlyDenied) return;
+      if (await permission.shouldShowRequestRationale) return;
+
+      await permission.request();
+    } catch (e) {
+      debugPrint('[PermissionService] Error solicitando notificaciones: $e');
+    }
+  }
+
   /// Solicita los permisos necesarios según la versión de Android y retorna true si todos fueron concedidos.
   static Future<bool> requestNearbyPermissions() async {
     final result = await requestPermissionsDetailed();

@@ -1,5 +1,5 @@
-import 'package:app/presentation/chat_screen.dart';
 import 'package:app/providers/node_id_provider.dart';
+import 'package:app/services/local_notification_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -103,10 +103,7 @@ class HomeScreen extends StatelessWidget {
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const ChatScreen()),
-                ),
+                onPressed: () => Navigator.pushNamed(context, chatRouteName),
                 icon: const Icon(Icons.chat_bubble_outline),
                 label: const Text('Nearby Chat'),
               ),

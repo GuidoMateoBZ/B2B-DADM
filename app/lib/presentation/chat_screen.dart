@@ -1,5 +1,6 @@
 import 'package:app/providers/nearby_provider.dart';
 import 'package:app/providers/node_id_provider.dart';
+import 'package:app/services/local_notification_service.dart';
 import 'package:app/services/nearby_permission_handler.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -23,6 +24,14 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) localNotificationService.requestPermission();
+    });
   }
 
   void _scrollToBottom() {

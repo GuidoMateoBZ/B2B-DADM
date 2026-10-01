@@ -42,6 +42,7 @@ dependencies:
   nearby_connections: ^4.3.0 # API de Nearby Connections
   permission_handler: ^11.0.0 # Solicitud de permisos en runtime
   device_info_plus: ^13.2.0
+  flutter_local_notifications: ^22.3.1
 
 dev_dependencies:
   flutter_test:
