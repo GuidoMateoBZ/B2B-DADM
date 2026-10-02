@@ -150,12 +150,26 @@ class NearbyService {
 
   // ── Envío de mensajes ──
 
-  /// Envía un mensaje de texto a un endpoint conectado.
+  /// Envía un mensaje de texto (o JSON) a un endpoint conectado.
   Future<void> sendMessage(String endpointId, String text) async {
     final bytes = Uint8List.fromList(utf8.encode(text));
     try {
       await _nearby.sendBytesPayload(endpointId, bytes);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[NearbyService] Error enviando a $endpointId: $e');
+    }
+  }
+
+  /// Envía un mensaje de texto (o JSON) a múltiples endpoints conectados.
+  Future<void> sendToEndpoints(List<String> endpointIds, String text) async {
+    final bytes = Uint8List.fromList(utf8.encode(text));
+    for (final endpointId in endpointIds) {
+      try {
+        await _nearby.sendBytesPayload(endpointId, bytes);
+      } catch (e) {
+        debugPrint('[NearbyService] Error enviando a $endpointId: $e');
+      }
+    }
   }
 
   // ── Desconexión ──
@@ -171,6 +185,8 @@ class NearbyService {
   Future<void> stopAll() async {
     try {
       await _nearby.stopAllEndpoints();
+      await _nearby.stopAdvertising();
+      await _nearby.stopDiscovery();
     } catch (_) {}
   }
 
