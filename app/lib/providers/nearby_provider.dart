@@ -120,7 +120,7 @@ class NearbyProvider extends ChangeNotifier {
       _isSearching = false;
       _state = NearbyState.error;
       _errorMessage = _service.lastError ??
-          'No se pudo iniciar la búsqueda. Verificá que el Bluetooth y la ubicación estén encendidos.';
+          'No se pudo conectar a la red. Verificá que el Bluetooth y la ubicación estén encendidos.';
       notifyListeners();
     } else if (!advResult || !disResult) {
       debugPrint(

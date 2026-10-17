@@ -497,7 +497,7 @@ class _HomeScreenState extends State<HomeScreen> {
           : 'Red Mesh conectada';
     }
     if (nearby.isSearching) {
-      return 'Buscando vecinos cercanos...';
+      return 'Conectando a la red Mesh...';
     }
     if (nearby.state == NearbyState.connecting) {
       return 'Conectando con vecino...';
@@ -505,7 +505,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (nearby.state == NearbyState.error) {
       return 'Error de red Nearby';
     }
-    return 'Búsqueda inactiva';
+    return 'Desconectado';
   }
 
   Widget _buildSearchToggleButton(
@@ -519,8 +519,8 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         ),
         onPressed: () => nearby.stopSearching(),
-        icon: const Icon(Icons.stop, size: 16),
-        label: const Text('Detener', style: TextStyle(fontSize: 12)),
+        icon: const Icon(Icons.link_off, size: 16),
+        label: const Text('Desconectar', style: TextStyle(fontSize: 12)),
       );
     }
 
@@ -530,7 +530,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       onPressed: nodeId != null ? () => nearby.startSearching(nodeId) : null,
       icon: const Icon(Icons.radar, size: 16),
-      label: const Text('Buscar', style: TextStyle(fontSize: 12)),
+      label: const Text('Conectar', style: TextStyle(fontSize: 12)),
     );
   }
 
@@ -555,7 +555,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Tocá "Nuevo Chat" para iniciar una conversación ingresando el Node ID de otro usuario, o activá la búsqueda para formar la red.',
+              'Tocá "Nuevo Chat" para iniciar una conversación ingresando el Node ID de otro usuario, o conectate a la red para comenzar.',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.outline,

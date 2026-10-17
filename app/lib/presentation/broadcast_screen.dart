@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models/chat_message.dart';
@@ -16,6 +17,7 @@ class BroadcastScreen extends StatefulWidget {
 class _BroadcastScreenState extends State<BroadcastScreen> {
   final TextEditingController _textController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
+  bool _loadingLocation = false;
 
   @override
   void initState() {
@@ -53,6 +55,50 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     _textController.clear();
     await context.read<NearbyProvider>().sendBroadcast(text);
     _scrollToBottom();
+  }
+
+  Future<void> _sendSosWithLocation() async {
+    setState(() => _loadingLocation = true);
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('El GPS / servicio de ubicación está desactivado'),
+            ),
+          );
+        }
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+
+      final lat = position.latitude;
+      final lng = position.longitude;
+      final mapsLink = 'https://maps.google.com/?q=$lat,$lng';
+      final sosText = '🆘 SOS — Necesito ayuda\n📍 Mi ubicación: $mapsLink';
+
+      if (mounted) {
+        await context.read<NearbyProvider>().sendBroadcast(sosText);
+        _scrollToBottom();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('No se pudo obtener la ubicación: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loadingLocation = false);
+      }
+    }
   }
 
   Future<void> _confirmPurge() async {
@@ -215,35 +261,79 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
               ],
             ),
             child: SafeArea(
-              child: Row(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        hintText: 'Escribí una alerta de emergencia...',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(24),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 10,
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: ActionChip(
+                      avatar: _loadingLocation
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.location_on,
+                              size: 16,
+                              color: Colors.white,
+                            ),
+                      label: const Text(
+                        'SOS',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          fontSize: 13,
                         ),
                       ),
-                      onSubmitted: (_) => _sendSos(),
+                      backgroundColor: Colors.red.shade700,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      side: BorderSide.none,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 0,
+                      ),
+                      onPressed:
+                          _loadingLocation ? null : _sendSosWithLocation,
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  FilledButton(
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                      shape: const CircleBorder(),
-                      padding: const EdgeInsets.all(14),
-                    ),
-                    onPressed: _sendSos,
-                    child: const Icon(Icons.send),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _textController,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: InputDecoration(
+                            hintText: 'Escribí una alerta de emergencia...',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 10,
+                            ),
+                          ),
+                          onSubmitted: (_) => _sendSos(),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
+                          shape: const CircleBorder(),
+                          padding: const EdgeInsets.all(14),
+                        ),
+                        onPressed: _sendSos,
+                        child: const Icon(Icons.send),
+                      ),
+                    ],
                   ),
                 ],
               ),
