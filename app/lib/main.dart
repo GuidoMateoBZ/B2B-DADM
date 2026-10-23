@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -7,11 +9,15 @@ import 'presentation/home_screen.dart';
 import 'providers/chat_provider.dart';
 import 'providers/nearby_provider.dart';
 import 'providers/node_id_provider.dart';
+import 'services/background_mesh_service.dart';
 import 'services/local_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final launchedFromNotification = await localNotificationService.initialize();
+  if (Platform.isAndroid) {
+    await BackgroundMeshService.instance.configure();
+  }
   runApp(const MyApp());
   if (launchedFromNotification) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -34,16 +40,15 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => NodeIdProvider()..loadId(),
-        ),
+        ChangeNotifierProvider(create: (_) => NodeIdProvider()..loadId()),
         ChangeNotifierProvider(
           create: (_) => ChatProvider()..loadConversations(),
         ),
         ChangeNotifierProxyProvider<ChatProvider, NearbyProvider>(
           create: (_) => NearbyProvider(),
           update: (_, chatProvider, nearbyProvider) =>
-              (nearbyProvider ?? NearbyProvider())..setChatProvider(chatProvider),
+              (nearbyProvider ?? NearbyProvider())
+                ..setChatProvider(chatProvider),
         ),
       ],
       child: MaterialApp(

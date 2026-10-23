@@ -1,14 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:nearby_connections/nearby_connections.dart';
 
 import '../data/discovered_endpoint.dart';
+import '../data/message_repository.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/envelope.dart';
-import '../data/nearby_service.dart';
+import '../services/background_mesh_service.dart';
 import '../services/local_notification_service.dart';
-import '../services/message_relay.dart';
 import '../services/nearby_permission_handler.dart';
 import 'chat_provider.dart';
 
@@ -18,13 +18,24 @@ enum NearbyState { idle, searching, connecting, connected, error }
 /// Nivel de alcanzabilidad de un nodo destino.
 enum NodeReachability { direct, multihop, unreachable }
 
-/// Provider que gestiona el estado de red de Nearby Connections,
-/// descubrimiento continuo, multi-conexión, routing multi-hop (MessageRelay)
-/// y reenvío de broadcast SOS.
+/// Adaptador de estado para la UI; la sesión Nearby vive en el servicio Android.
 class NearbyProvider extends ChangeNotifier {
-  final NearbyService _service = NearbyService();
+  NearbyProvider({
+    MessageRepository? repository,
+    BackgroundMeshService? meshService,
+  }) : _repository = repository ?? MessageRepository(),
+       _meshService = meshService ?? BackgroundMeshService.instance {
+    _stateSubscription = _meshService.states.listen(_applyState);
+    _errorSubscription = _meshService.errors.listen(_applyError);
+    _requestStateIfServiceIsRunning();
+  }
 
-  // ── Estado observable ──
+  final MessageRepository _repository;
+  final BackgroundMeshService _meshService;
+
+  StreamSubscription<Map<String, dynamic>?>? _stateSubscription;
+  StreamSubscription<Map<String, dynamic>?>? _errorSubscription;
+  ChatProvider? _chatProvider;
 
   NearbyState _state = NearbyState.idle;
   NearbyState get state => _state;
@@ -36,7 +47,6 @@ class NearbyProvider extends ChangeNotifier {
   List<DiscoveredEndpoint> get discoveredEndpoints =>
       List.unmodifiable(_discoveredEndpoints);
 
-  /// Mapa de vecinos conectados: endpointId -> nodeId
   final Map<String, String> _connectedEndpoints = {};
   Map<String, String> get connectedEndpoints =>
       Map.unmodifiable(_connectedEndpoints);
@@ -44,39 +54,138 @@ class NearbyProvider extends ChangeNotifier {
   int get connectedCount => _connectedEndpoints.length;
   List<String> get connectedNodeIds => _connectedEndpoints.values.toList();
 
-  final Set<String> _connectingEndpoints = {};
-
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
 
   String? _myNodeId;
   String? get myNodeId => _myNodeId;
 
-  late MessageRelay _relay;
-  ChatProvider? _chatProvider;
-
-  // ── Constructor ──
-
-  NearbyProvider() {
-    _relay = MessageRelay(myNodeId: '');
-    _setupCallbacks();
-  }
-
-  /// Inyecta o actualiza la referencia a ChatProvider.
   void setChatProvider(ChatProvider provider) {
     _chatProvider = provider;
   }
 
-  void _setupCallbacks() {
-    _service.onEndpointFound = _onEndpointFound;
-    _service.onEndpointLost = _onEndpointLost;
-    _service.onConnectionInitiated = _onConnectionInitiated;
-    _service.onConnectionResult = _onConnectionResult;
-    _service.onDisconnected = _onDisconnected;
-    _service.onMessageReceived = _onMessageReceived;
+  Future<void> _requestStateIfServiceIsRunning() async {
+    try {
+      if (await _meshService.isRunning()) {
+        _meshService.requestCurrentState();
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[NearbyProvider] No se pudo consultar el servicio: $error\n$stackTrace',
+      );
+      _applyError({
+        'message': 'No se pudo consultar el servicio de red: $error',
+      });
+    }
   }
 
-  /// Determina el nivel de alcanzabilidad de un nodo destino.
+  void _applyState(Map<String, dynamic>? data) {
+    if (data == null) return;
+
+    final stateName = data['state'];
+    if (stateName is String) {
+      _state = NearbyState.values.firstWhere(
+        (state) => state.name == stateName,
+        orElse: () => NearbyState.error,
+      );
+    }
+    _isSearching = data['isSearching'] == true;
+    _myNodeId = data['nodeId'] as String?;
+    _errorMessage = data['errorMessage'] as String?;
+
+    _discoveredEndpoints
+      ..clear()
+      ..addAll(
+        (data['discoveredEndpoints'] as List<dynamic>? ?? const [])
+            .whereType<Map<dynamic, dynamic>>()
+            .map(
+              (endpoint) => DiscoveredEndpoint(
+                endpointId: endpoint['endpointId'] as String,
+                userName: endpoint['userName'] as String,
+              ),
+            ),
+      );
+
+    _connectedEndpoints
+      ..clear()
+      ..addAll(
+        (data['connectedEndpoints'] as Map<dynamic, dynamic>? ?? const {}).map(
+          (endpointId, nodeId) =>
+              MapEntry(endpointId as String, nodeId as String),
+        ),
+      );
+    notifyListeners();
+  }
+
+  void _applyError(Map<String, dynamic>? data) {
+    final message = data?['message'];
+    if (message is! String || message.isEmpty) return;
+    _errorMessage = message;
+    notifyListeners();
+  }
+
+  /// Solicita permisos en la UI y luego inicia la sesión foreground Android.
+  Future<void> startSearching(String nodeId) async {
+    _myNodeId = nodeId;
+    _errorMessage = null;
+
+    if (!Platform.isAndroid) {
+      _state = NearbyState.error;
+      _errorMessage =
+          'La conexión mesh en segundo plano solo está disponible en Android.';
+      notifyListeners();
+      return;
+    }
+
+    final permissionResult =
+        await PermissionService.requestPermissionsDetailed();
+    if (!permissionResult.isGranted) {
+      _state = NearbyState.error;
+      _errorMessage = permissionResult.missingMessage;
+      notifyListeners();
+      return;
+    }
+
+    await localNotificationService.requestPermission();
+
+    _discoveredEndpoints.clear();
+    _connectedEndpoints.clear();
+    _state = NearbyState.searching;
+    _isSearching = true;
+    notifyListeners();
+
+    try {
+      await _meshService.start(nodeId);
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[NearbyProvider] No se pudo iniciar el servicio: $error\n$stackTrace',
+      );
+      _state = NearbyState.error;
+      _isSearching = false;
+      _errorMessage = error.toString();
+      notifyListeners();
+    }
+  }
+
+  Future<void> connectTo(String endpointId) async {
+    if (!_isSearching) return;
+    _meshService.connectTo(endpointId);
+  }
+
+  Future<void> stopSearching() async {
+    _isSearching = false;
+    _state = NearbyState.idle;
+    _discoveredEndpoints.clear();
+    _connectedEndpoints.clear();
+    _errorMessage = null;
+    notifyListeners();
+    _meshService.stop();
+  }
+
+  Future<void> disconnectEndpoint(String endpointId) async {
+    _meshService.disconnectEndpoint(endpointId);
+  }
+
   NodeReachability getReachability(String targetNodeId) {
     if (_connectedEndpoints.containsValue(targetNodeId)) {
       return NodeReachability.direct;
@@ -90,252 +199,46 @@ class NearbyProvider extends ChangeNotifier {
   bool isDirectNeighbor(String nodeId) =>
       _connectedEndpoints.containsValue(nodeId);
 
-  // ── Control de Red (Advertising + Discovery) ──
-
-  /// Inicia búsqueda continua (advertising + discovery).
-  Future<void> startSearching(String nodeId) async {
-    _myNodeId = nodeId;
-    _relay = MessageRelay(myNodeId: nodeId);
-
-    // Pedir permisos en runtime
-    final permissionResult =
-        await PermissionService.requestPermissionsDetailed();
-    if (!permissionResult.isGranted) {
-      _state = NearbyState.error;
-      _errorMessage = permissionResult.missingMessage;
-      notifyListeners();
-      return;
-    }
-
-    _discoveredEndpoints.clear();
-    _errorMessage = null;
-    _isSearching = true;
-    _state = NearbyState.searching;
-    notifyListeners();
-
-    final advResult = await _service.startAdvertising(nodeId);
-    final disResult = await _service.startDiscovery(nodeId);
-
-    if (!advResult && !disResult) {
-      _isSearching = false;
-      _state = NearbyState.error;
-      _errorMessage = _service.lastError ??
-          'No se pudo conectar a la red. Verificá que el Bluetooth y la ubicación estén encendidos.';
-      notifyListeners();
-    } else if (!advResult || !disResult) {
-      debugPrint(
-        '[NearbyProvider] Parcialmente iniciado: adv=$advResult, dis=$disResult. Detalle: ${_service.lastError}',
-      );
-    }
-  }
-
-  /// Solicita conexión a un endpoint descubierto.
-  Future<void> connectTo(String endpointId) async {
-    if (_myNodeId == null || _connectingEndpoints.contains(endpointId)) return;
-
-    _connectingEndpoints.add(endpointId);
-    _state = NearbyState.connecting;
-    notifyListeners();
-
-    final result = await _service.requestConnection(_myNodeId!, endpointId);
-    if (!result) {
-      _connectingEndpoints.remove(endpointId);
-      _updateCurrentState();
-      notifyListeners();
-    }
-  }
-
-  /// Detiene todas las conexiones, advertising y discovery.
-  Future<void> stopSearching() async {
-    _isSearching = false;
-    await _service.stopAll();
-    _connectedEndpoints.clear();
-    _discoveredEndpoints.clear();
-    _connectingEndpoints.clear();
-    _relay.clearSeenMessages();
-    _state = NearbyState.idle;
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  /// Desconecta de un endpoint específico.
-  Future<void> disconnectEndpoint(String endpointId) async {
-    await _service.disconnectFromEndpoint(endpointId);
-    _onDisconnected(endpointId);
-  }
-
-  // ── Envío de Mensajes ──
-
-  /// Envía un mensaje 1-a-1 a un nodo destino específico.
-  /// Si es vecino directo, se envía a su endpoint; si no, se propaga por flooding.
   Future<void> sendChatMessage(String targetNodeId, String text) async {
-    if (_myNodeId == null || text.trim().isEmpty) return;
+    final nodeId = _myNodeId;
+    if (nodeId == null || text.trim().isEmpty) return;
 
     final envelope = Envelope.create(
-      fromNodeId: _myNodeId!,
+      fromNodeId: nodeId,
       toNodeId: targetNodeId,
       text: text.trim(),
-      ttl: Envelope.defaultTtl,
     );
-
-    // 1. Guardar localmente
-    final chatMsg = ChatMessage.fromEnvelope(envelope, isMine: true);
-    await _chatProvider?.addMessage(chatMsg);
-
-    // 2. Obtener destinos del relay
-    final targets = _relay.getTargetEndpoints(envelope);
-    if (targets.isNotEmpty) {
-      debugPrint(
-        '[NearbyProvider] Enviando mensaje ${envelope.messageId} a endpoints: $targets',
-      );
-      await _service.sendToEndpoints(targets, envelope.encode());
-    } else {
-      debugPrint(
-        '[NearbyProvider] No hay vecinos conectados para rutear mensaje a $targetNodeId',
-      );
-    }
+    await _saveAndSend(envelope);
   }
 
-  /// Envía un broadcast SOS a todos los vecinos conectados para propagación epidémica.
   Future<void> sendBroadcast(String text) async {
-    if (_myNodeId == null || text.trim().isEmpty) return;
+    final nodeId = _myNodeId;
+    if (nodeId == null || text.trim().isEmpty) return;
 
     final envelope = Envelope.create(
-      fromNodeId: _myNodeId!,
+      fromNodeId: nodeId,
       toNodeId: Envelope.broadcastAddress,
       text: text.trim(),
-      ttl: Envelope.defaultTtl,
     );
-
-    // 1. Guardar localmente
-    final chatMsg = ChatMessage.fromEnvelope(envelope, isMine: true);
-    await _chatProvider?.addMessage(chatMsg);
-
-    // 2. Enviar a todos los vecinos conectados
-    final targets = _relay.getTargetEndpoints(envelope);
-    if (targets.isNotEmpty) {
-      debugPrint(
-        '[NearbyProvider] Enviando SOS ${envelope.messageId} a endpoints: $targets',
-      );
-      await _service.sendToEndpoints(targets, envelope.encode());
-    }
+    await _saveAndSend(envelope);
   }
 
-  // ── Callbacks de NearbyService ──
-
-  void _onEndpointFound(String endpointId, String userName) {
-    final alreadyExists =
-        _discoveredEndpoints.any((e) => e.endpointId == endpointId);
-    if (!alreadyExists && !_connectedEndpoints.containsKey(endpointId)) {
-      _discoveredEndpoints.add(
-        DiscoveredEndpoint(endpointId: endpointId, userName: userName),
-      );
-      notifyListeners();
+  Future<void> _saveAndSend(Envelope envelope) async {
+    final message = ChatMessage.fromEnvelope(envelope, isMine: true);
+    final inserted = await _repository.insert(message);
+    if (inserted) {
+      await _chatProvider?.refreshFromStorage(message.receiverId);
     }
 
-    // Auto-conexión: para evitar colisiones cruzadas cuando ambos se descubren a la vez,
-    // el nodo con ID lexicográficamente mayor inicia la solicitud.
-    if (!_connectedEndpoints.containsKey(endpointId) &&
-        !_connectingEndpoints.contains(endpointId) &&
-        _myNodeId != null) {
-      if (_myNodeId!.compareTo(userName) > 0) {
-        connectTo(endpointId);
-      }
-    }
-  }
-
-  void _onEndpointLost(String endpointId) {
-    _discoveredEndpoints.removeWhere((e) => e.endpointId == endpointId);
-    notifyListeners();
-  }
-
-  void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
-    // Aceptar conexiones entrantes automáticamente
-    _service.acceptConnection(endpointId);
-  }
-
-  void _onConnectionResult(String endpointId, Status status) {
-    _connectingEndpoints.remove(endpointId);
-
-    if (status == Status.CONNECTED) {
-      final endpoint = _discoveredEndpoints
-          .where((e) => e.endpointId == endpointId)
-          .firstOrNull;
-      final nodeName = endpoint?.userName ?? endpointId;
-
-      _connectedEndpoints[endpointId] = nodeName;
-      _relay.addNeighbor(endpointId, nodeName);
-      _discoveredEndpoints.removeWhere((e) => e.endpointId == endpointId);
-
-      _updateCurrentState();
-      _errorMessage = null;
-    } else {
-      _updateCurrentState();
-    }
-    notifyListeners();
-  }
-
-  void _onDisconnected(String endpointId) {
-    _connectedEndpoints.remove(endpointId);
-    _relay.removeNeighbor(endpointId);
-    _connectingEndpoints.remove(endpointId);
-
-    _updateCurrentState();
-    notifyListeners();
-  }
-
-  void _onMessageReceived(String endpointId, String rawMessage) {
-    try {
-      final envelope = Envelope.decode(rawMessage);
-      final result = _relay.processIncoming(endpointId, envelope);
-
-      if (result.action == RelayAction.deliver) {
-        final chatMsg = ChatMessage.fromEnvelope(envelope, isMine: false);
-        _chatProvider?.addMessage(chatMsg);
-
-        if (envelope.isBroadcast) {
-          unawaited(
-            localNotificationService.showSosAlert(
-              envelope.fromNodeId,
-              envelope.text,
-            ),
-          );
-        } else {
-          unawaited(
-            localNotificationService.showIncomingMessage(envelope.fromNodeId),
-          );
-        }
-      }
-
-      // Reenviar si corresponde (multi-hop o broadcast)
-      if (result.forwardTo.isNotEmpty) {
-        debugPrint(
-          '[NearbyProvider] Reenviando mensaje ${result.envelope.messageId} (TTL ${result.envelope.ttl}) a: ${result.forwardTo}',
-        );
-        _service.sendToEndpoints(result.forwardTo, result.envelope.encode());
-      }
-    } catch (e, stack) {
-      debugPrint(
-        '[NearbyProvider] Error procesando mensaje de $endpointId: $e\n$stack',
-      );
-    }
-  }
-
-  void _updateCurrentState() {
-    if (!_isSearching) {
-      _state = NearbyState.idle;
-    } else if (_connectedEndpoints.isNotEmpty) {
-      _state = NearbyState.connected;
-    } else if (_connectingEndpoints.isNotEmpty) {
-      _state = NearbyState.connecting;
-    } else {
-      _state = NearbyState.searching;
+    if (_isSearching) {
+      _meshService.sendEnvelope(envelope.encode());
     }
   }
 
   @override
   void dispose() {
-    _service.stopAll();
+    _stateSubscription?.cancel();
+    _errorSubscription?.cancel();
     super.dispose();
   }
 }

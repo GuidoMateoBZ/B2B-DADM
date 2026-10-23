@@ -92,6 +92,9 @@ class LocalNotificationService {
   static const _sosChannelId = 'sos_alerts';
   static const _sosChannelName = 'Alertas SOS';
 
+  static const _meshServiceChannelId = 'b2b_mesh_service';
+  static const _meshServiceChannelName = 'B2B Mesh';
+
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
@@ -119,6 +122,31 @@ class LocalNotificationService {
       },
     );
 
+    await _createAndroidNotificationChannels();
+
+    _initialized = true;
+    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
+    if (launchDetails?.didNotificationLaunchApp ?? false) {
+      _initialPayload = launchDetails?.notificationResponse?.payload;
+      return true;
+    }
+    return false;
+  }
+
+  /// Inicializa notificaciones para el isolate del servicio, sin navegación UI.
+  Future<void> initializeForBackground() async {
+    if (!Platform.isAndroid) return;
+
+    await _plugin.initialize(
+      settings: const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      ),
+    );
+    await _createAndroidNotificationChannels();
+    _initialized = true;
+  }
+
+  Future<void> _createAndroidNotificationChannels() async {
     final androidImplementation = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -142,13 +170,14 @@ class LocalNotificationService {
       ),
     );
 
-    _initialized = true;
-    final launchDetails = await _plugin.getNotificationAppLaunchDetails();
-    if (launchDetails?.didNotificationLaunchApp ?? false) {
-      _initialPayload = launchDetails?.notificationResponse?.payload;
-      return true;
-    }
-    return false;
+    await androidImplementation?.createNotificationChannel(
+      const AndroidNotificationChannel(
+        _meshServiceChannelId,
+        _meshServiceChannelName,
+        description: 'Estado de la conexión mesh en segundo plano',
+        importance: Importance.low,
+      ),
+    );
   }
 
   /// Solicita el permiso nativo cuando la pantalla de chat lo requiere.
@@ -179,9 +208,54 @@ class LocalNotificationService {
     );
   }
 
+  /// Publica una notificación sin consultar el estado de navegación de la UI.
+  Future<void> showIncomingMessageFromBackground(String senderNodeId) async {
+    if (!_initialized) return;
+
+    await _plugin.show(
+      id: 0,
+      title: 'Mensaje de $senderNodeId',
+      body: 'Tienes un mensaje nuevo',
+      payload: senderNodeId,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          _channelName,
+          channelDescription: 'Notificaciones de mensajes recibidos',
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+      ),
+    );
+  }
+
   /// Publica una alerta de emergencia SOS.
   Future<void> showSosAlert(String fromNodeId, String text) async {
     if (!_initialized || appNavigationObserver.isBroadcastVisible) return;
+
+    await _plugin.show(
+      id: 1,
+      title: '🚨 SOS de $fromNodeId',
+      body: text,
+      payload: 'all',
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _sosChannelId,
+          _sosChannelName,
+          channelDescription: 'Alertas de emergencia SOS',
+          importance: Importance.max,
+          priority: Priority.max,
+        ),
+      ),
+    );
+  }
+
+  /// Publica una alerta SOS sin consultar el estado de navegación de la UI.
+  Future<void> showSosAlertFromBackground(
+    String fromNodeId,
+    String text,
+  ) async {
+    if (!_initialized) return;
 
     await _plugin.show(
       id: 1,

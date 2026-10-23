@@ -32,8 +32,6 @@ class PermissionService {
       final permission = Permission.notification;
       final status = await permission.status;
       if (status.isGranted || status.isPermanentlyDenied) return;
-      if (await permission.shouldShowRequestRationale) return;
-
       await permission.request();
     } catch (e) {
       debugPrint('[PermissionService] Error solicitando notificaciones: $e');
@@ -82,7 +80,9 @@ class PermissionService {
       permissionsToRequest.add(Permission.nearbyWifiDevices);
     }
 
-    debugPrint('[PermissionService] Solicitando permisos: $permissionsToRequest');
+    debugPrint(
+      '[PermissionService] Solicitando permisos: $permissionsToRequest',
+    );
     final statuses = await permissionsToRequest.request();
 
     final List<String> missing = [];
@@ -105,7 +105,9 @@ class PermissionService {
     // Verificar si el servicio de Ubicación (GPS) está encendido en el sistema
     try {
       final locStatus = await Permission.location.serviceStatus;
-      debugPrint('[PermissionService] Ubicación (GPS) serviceStatus: $locStatus');
+      debugPrint(
+        '[PermissionService] Ubicación (GPS) serviceStatus: $locStatus',
+      );
       if (locStatus == ServiceStatus.disabled) {
         return const PermissionResult(
           isGranted: false,
@@ -113,10 +115,14 @@ class PermissionService {
         );
       }
     } catch (e) {
-      debugPrint('[PermissionService] No se pudo consultar serviceStatus de ubicación: $e');
+      debugPrint(
+        '[PermissionService] No se pudo consultar serviceStatus de ubicación: $e',
+      );
     }
 
-    debugPrint('[PermissionService] ¡Todos los permisos y servicios requeridos están listos!');
+    debugPrint(
+      '[PermissionService] ¡Todos los permisos y servicios requeridos están listos!',
+    );
     return const PermissionResult(isGranted: true);
   }
 

@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
 import 'models/chat_message.dart';
 
 /// Vista previa de una conversación para la lista en Home.
@@ -48,13 +49,14 @@ class MessageStorage {
   }
 
   /// Guarda un mensaje (upsert: ignora si ya existe por id)
-  static Future<void> insert(ChatMessage msg) async {
+  static Future<bool> insert(ChatMessage msg) async {
     final db = await database;
-    await db.insert(
+    final rowId = await db.insert(
       'messages',
       msg.toMap(),
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
+    return rowId != -1;
   }
 
   /// Obtiene todos los mensajes de una conversación ordenados por timestamp
@@ -83,18 +85,26 @@ class MessageStorage {
       GROUP BY m.receiver_id
       ORDER BY m.timestamp DESC
     ''');
-    return rows.map((r) => ConversationPreview(
-      peerNodeId: r['receiver_id'] as String,
-      lastMessageText: r['text'] as String,
-      lastTimestamp: r['timestamp'] as int,
-      isBroadcast: r['receiver_id'] == 'all',
-    )).toList();
+    return rows
+        .map(
+          (r) => ConversationPreview(
+            peerNodeId: r['receiver_id'] as String,
+            lastMessageText: r['text'] as String,
+            lastTimestamp: r['timestamp'] as int,
+            isBroadcast: r['receiver_id'] == 'all',
+          ),
+        )
+        .toList();
   }
 
   /// Elimina los mensajes de una conversación
   static Future<void> deleteConversation(String receiverId) async {
     final db = await database;
-    await db.delete('messages', where: 'receiver_id = ?', whereArgs: [receiverId]);
+    await db.delete(
+      'messages',
+      where: 'receiver_id = ?',
+      whereArgs: [receiverId],
+    );
   }
 
   /// Purga: elimina mensajes más antiguos que [days] días
@@ -103,12 +113,20 @@ class MessageStorage {
     final cutoff = DateTime.now()
         .subtract(Duration(days: days))
         .millisecondsSinceEpoch;
-    return await db.delete('messages', where: 'timestamp < ?', whereArgs: [cutoff]);
+    return await db.delete(
+      'messages',
+      where: 'timestamp < ?',
+      whereArgs: [cutoff],
+    );
   }
 
   /// Purga: elimina todos los mensajes SOS (receiver_id = 'all')
   static Future<int> purgeBroadcasts() async {
     final db = await database;
-    return await db.delete('messages', where: 'receiver_id = ?', whereArgs: ['all']);
+    return await db.delete(
+      'messages',
+      where: 'receiver_id = ?',
+      whereArgs: ['all'],
+    );
   }
 }
