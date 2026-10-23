@@ -4,10 +4,13 @@ import 'package:provider/provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../data/message_storage.dart';
+import '../data/models/mesh_contact.dart';
 import '../providers/chat_provider.dart';
+import '../providers/contact_provider.dart';
 import '../providers/nearby_provider.dart';
 import '../providers/node_id_provider.dart';
 import '../services/local_notification_service.dart';
+import 'contact_form_dialog.dart';
 import 'new_chat_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -17,15 +20,37 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  int _selectedTab = 0;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this)
+      ..addListener(_handleTabChange);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<ChatProvider>().loadConversations();
+        context.read<ContactProvider>().loadContacts();
       }
     });
+  }
+
+  void _handleTabChange() {
+    if (_selectedTab != _tabController.index &&
+        !_tabController.indexIsChanging) {
+      setState(() => _selectedTab = _tabController.index);
+    }
+  }
+
+  @override
+  void dispose() {
+    _tabController
+      ..removeListener(_handleTabChange)
+      ..dispose();
+    super.dispose();
   }
 
   Future<void> _openNewChat(String? myNodeId) async {
@@ -49,38 +74,131 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _showNodeIdQr(String nodeId) async {
     await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Compartí tu Node ID'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Otra persona puede escanear este código para iniciar un chat.',
-              textAlign: TextAlign.center,
+      builder: (dialogContext) => Dialog(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 360, maxHeight: 520),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Compartí tu Node ID',
+                  style: Theme.of(dialogContext).textTheme.titleLarge,
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Otra persona puede escanear este código para iniciar un chat.',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(dialogContext).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  width: 244,
+                  height: 244,
+                  padding: const EdgeInsets.all(12),
+                  color: Colors.white,
+                  child: QrImageView(
+                    data: nodeId,
+                    version: QrVersions.auto,
+                    size: 220,
+                    backgroundColor: Colors.white,
+                    errorStateBuilder: (context, error) => Center(
+                      child: Text(
+                        'No se pudo generar el QR para este Node ID.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SelectableText(
+                  nodeId,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontFamily: 'monospace'),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    child: const Text('Cerrar'),
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            QrImageView(
-              data: nodeId,
-              version: QrVersions.auto,
-              size: 220,
-              backgroundColor: Colors.white,
-            ),
-            const SizedBox(height: 12),
-            SelectableText(
-              nodeId,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: 'monospace'),
-            ),
-          ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _addContact(String? myNodeId) async {
+    final result = await showDialog<ContactFormResult>(
+      context: context,
+      builder: (_) => ContactFormDialog(myNodeId: myNodeId),
+    );
+    if (result == null || !mounted) return;
+
+    final inserted = await context.read<ContactProvider>().addContact(
+      result.nodeId,
+      result.alias,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          inserted
+              ? 'Contacto guardado'
+              : 'Ese Node ID ya está en tus contactos',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  Future<void> _editContact(MeshContact contact, String? myNodeId) async {
+    final result = await showDialog<ContactFormResult>(
+      context: context,
+      builder: (_) => ContactFormDialog(
+        myNodeId: myNodeId,
+        existingNodeId: contact.nodeId,
+        initialAlias: contact.alias,
+      ),
+    );
+    if (result == null || !mounted) return;
+    await context.read<ContactProvider>().updateAlias(
+      contact.nodeId,
+      result.alias,
+    );
+  }
+
+  Future<void> _removeContact(MeshContact contact) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitar contacto'),
+        content: Text(
+          '¿Querés quitar a ${contact.displayName} de tus contactos? '
+          'El historial de chat no se eliminará.',
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cerrar'),
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Quitar'),
           ),
         ],
       ),
     );
+    if (confirmed == true && mounted) {
+      await context.read<ContactProvider>().removeContact(contact.nodeId);
+    }
   }
 
   Future<void> _confirmPurgeOldMessages() async {
@@ -208,6 +326,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final nodeIdProvider = context.watch<NodeIdProvider>();
     final nearbyProvider = context.watch<NearbyProvider>();
     final chatProvider = context.watch<ChatProvider>();
+    final contactProvider = context.watch<ContactProvider>();
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -261,9 +380,11 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openNewChat(nodeIdProvider.nodeId),
-        icon: const Icon(Icons.add_comment),
-        label: const Text('Nuevo Chat'),
+        onPressed: () => _selectedTab == 0
+            ? _openNewChat(nodeIdProvider.nodeId)
+            : _addContact(nodeIdProvider.nodeId),
+        icon: Icon(_selectedTab == 0 ? Icons.add_comment : Icons.person_add),
+        label: Text(_selectedTab == 0 ? 'Nuevo Chat' : 'Agregar contacto'),
       ),
       body: SafeArea(
         child: Column(
@@ -421,54 +542,176 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
 
             const SizedBox(height: 8),
-
-            // Título de la lista de conversaciones
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Conversaciones',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: theme.colorScheme.primary,
-                      letterSpacing: 0.5,
-                    ),
+            TabBar(
+              controller: _tabController,
+              tabs: [
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Conversaciones'),
+                      if (chatProvider.isLoading) ...[
+                        const SizedBox(width: 8),
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (chatProvider.isLoading)
-                    const SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                ),
+                Tab(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text('Contactos'),
+                      if (contactProvider.isLoading) ...[
+                        const SizedBox(width: 8),
+                        const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildConversationsList(
+                    theme,
+                    nodeIdProvider.nodeId,
+                    chatProvider,
+                    nearbyProvider,
+                  ),
+                  _buildContactsList(
+                    theme,
+                    contactProvider,
+                    nodeIdProvider.nodeId,
+                  ),
                 ],
               ),
-            ),
-
-            // Lista de Conversaciones
-            Expanded(
-              child: chatProvider.conversations.isEmpty
-                  ? _buildEmptyConversationsView(theme, nodeIdProvider.nodeId)
-                  : ListView.separated(
-                      padding: const EdgeInsets.only(bottom: 80, top: 4),
-                      itemCount: chatProvider.conversations.length,
-                      separatorBuilder: (_, _) =>
-                          const Divider(height: 1, indent: 72),
-                      itemBuilder: (context, index) {
-                        final conv = chatProvider.conversations[index];
-                        return _buildConversationTile(
-                          context,
-                          conv,
-                          nearbyProvider,
-                        );
-                      },
-                    ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildConversationsList(
+    ThemeData theme,
+    String? myNodeId,
+    ChatProvider chatProvider,
+    NearbyProvider nearbyProvider,
+  ) {
+    if (chatProvider.conversations.isEmpty) {
+      return _buildEmptyConversationsView(theme, myNodeId);
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.only(bottom: 80, top: 4),
+      itemCount: chatProvider.conversations.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
+      itemBuilder: (context, index) => _buildConversationTile(
+        context,
+        chatProvider.conversations[index],
+        nearbyProvider,
+        context.read<ContactProvider>(),
+      ),
+    );
+  }
+
+  Widget _buildContactsList(
+    ThemeData theme,
+    ContactProvider contactProvider,
+    String? myNodeId,
+  ) {
+    if (contactProvider.contacts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.contacts_outlined,
+                size: 56,
+                color: theme.colorScheme.outlineVariant,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                'Tu agenda está vacía',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Agregá un Node ID manualmente o escaneá su QR. '
+                'Guardar un contacto no inicia un chat.',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.outline,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      padding: const EdgeInsets.only(bottom: 80, top: 4),
+      itemCount: contactProvider.contacts.length,
+      separatorBuilder: (_, _) => const Divider(height: 1, indent: 72),
+      itemBuilder: (context, index) {
+        final contact = contactProvider.contacts[index];
+        return ListTile(
+          leading: CircleAvatar(
+            backgroundColor: theme.colorScheme.primaryContainer,
+            foregroundColor: theme.colorScheme.onPrimaryContainer,
+            child: const Icon(Icons.person_outline),
+          ),
+          title: Text(
+            contact.displayName,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Text(
+            contact.nodeId,
+            style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+          ),
+          onTap: () async {
+            await Navigator.pushNamed(
+              context,
+              chatRouteName,
+              arguments: contact.nodeId,
+            );
+            if (context.mounted) {
+              context.read<ChatProvider>().loadConversations();
+            }
+          },
+          trailing: PopupMenuButton<String>(
+            onSelected: (action) {
+              if (action == 'edit') {
+                _editContact(contact, myNodeId);
+              } else if (action == 'remove') {
+                _removeContact(contact);
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('Editar alias')),
+              PopupMenuItem(
+                value: 'remove',
+                child: Text('Quitar de contactos'),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -571,6 +814,7 @@ class _HomeScreenState extends State<HomeScreen> {
     BuildContext context,
     ConversationPreview conv,
     NearbyProvider nearby,
+    ContactProvider contactProvider,
   ) {
     final theme = Theme.of(context);
     final isSos = conv.isBroadcast;
@@ -613,6 +857,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     // Chat 1-a-1
+    final contact = contactProvider.findByNodeId(conv.peerNodeId);
     final reachability = nearby.getReachability(conv.peerNodeId);
     Color statusColor;
     String statusTooltip;
@@ -661,22 +906,39 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       title: Text(
-        conv.peerNodeId,
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontWeight: FontWeight.w600,
-          fontSize: 13,
-        ),
+        contact?.displayName ?? conv.peerNodeId,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
       ),
-      subtitle: Text(
-        conv.lastMessageText,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
-      ),
+      subtitle: contact?.alias == null
+          ? Text(
+              conv.lastMessageText,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  conv.peerNodeId,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+                ),
+                Text(
+                  conv.lastMessageText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
       trailing: Text(
         _formatTimestamp(conv.lastTimestamp),
         style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),

@@ -3,9 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models/chat_message.dart';
+import '../data/models/mesh_contact.dart';
 import '../providers/chat_provider.dart';
+import '../providers/contact_provider.dart';
 import '../providers/nearby_provider.dart';
+import '../providers/node_id_provider.dart';
 import '../services/local_notification_service.dart';
+import 'contact_form_dialog.dart';
 
 /// Pantalla de chat 1-a-1 con un nodo específico (por Node ID / UUID).
 /// Soporta comunicación directa o multi-hop ruteada a través de la red mesh.
@@ -37,7 +41,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final routeArgs = ModalRoute.of(context)?.settings.arguments;
-    final target = widget.targetNodeId ?? (routeArgs is String ? routeArgs : null);
+    final target =
+        widget.targetNodeId ?? (routeArgs is String ? routeArgs : null);
 
     if (target != null && target != _resolvedTargetNodeId) {
       _resolvedTargetNodeId = target;
@@ -74,6 +79,67 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
+  Future<void> _saveOrEditContact({
+    required String nodeId,
+    required MeshContact? contact,
+    required String? myNodeId,
+  }) async {
+    final result = await showDialog<ContactFormResult>(
+      context: context,
+      builder: (_) => ContactFormDialog(
+        myNodeId: myNodeId,
+        existingNodeId: contact?.nodeId,
+        initialNodeId: nodeId,
+        initialAlias: contact?.alias,
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    if (contact == null) {
+      final inserted = await context.read<ContactProvider>().addContact(
+        nodeId,
+        result.alias,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              inserted ? 'Contacto guardado' : 'El contacto ya existe',
+            ),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else {
+      await context.read<ContactProvider>().updateAlias(nodeId, result.alias);
+    }
+  }
+
+  Future<void> _removeContact(String nodeId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Quitar contacto'),
+        content: const Text(
+          'El historial de chat se conservará. ¿Querés continuar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Quitar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await context.read<ContactProvider>().removeContact(nodeId);
+    }
+  }
+
   String _formatTimestamp(int ms) {
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
     final now = DateTime.now();
@@ -88,8 +154,11 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final chatProvider = context.watch<ChatProvider>();
+    final contactProvider = context.watch<ContactProvider>();
+    final nodeIdProvider = context.watch<NodeIdProvider>();
     final nearbyProvider = context.watch<NearbyProvider>();
     final target = _resolvedTargetNodeId ?? 'Desconocido';
+    final contact = contactProvider.findByNodeId(target);
     final reachability = nearbyProvider.getReachability(target);
     final messages = chatProvider.messages;
     final theme = Theme.of(context);
@@ -105,13 +174,16 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              target,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
+              contact?.displayName ?? target,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
+            if (contact != null && contact.alias != null)
+              Text(
+                target,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  fontFamily: 'monospace',
+                ),
+              ),
             Row(
               children: [
                 _buildReachabilityDot(reachability),
@@ -141,7 +213,15 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           PopupMenuButton<String>(
             onSelected: (val) async {
-              if (val == 'delete') {
+              if (val == 'contact') {
+                await _saveOrEditContact(
+                  nodeId: target,
+                  contact: contact,
+                  myNodeId: nodeIdProvider.nodeId,
+                );
+              } else if (val == 'remove_contact') {
+                await _removeContact(target);
+              } else if (val == 'delete') {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -168,6 +248,34 @@ class _ChatScreenState extends State<ChatScreen> {
               }
             },
             itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'contact',
+                child: Row(
+                  children: [
+                    Icon(
+                      contact == null ? Icons.person_add_alt_1 : Icons.edit,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      contact == null
+                          ? 'Guardar en contactos'
+                          : 'Editar contacto',
+                    ),
+                  ],
+                ),
+              ),
+              if (contact != null)
+                const PopupMenuItem(
+                  value: 'remove_contact',
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_remove_outlined, size: 20),
+                      SizedBox(width: 8),
+                      Text('Quitar de contactos'),
+                    ],
+                  ),
+                ),
               const PopupMenuItem(
                 value: 'delete',
                 child: Row(
@@ -192,7 +300,11 @@ class _ChatScreenState extends State<ChatScreen> {
               color: Colors.amber.withValues(alpha: 0.15),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                  const Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Colors.orange,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -313,10 +425,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       width: 8,
       height: 8,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 
@@ -355,8 +464,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         child: Column(
-          crossAxisAlignment:
-              isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             if (!isMine) ...[
               Text(
@@ -384,10 +494,11 @@ class _ChatScreenState extends State<ChatScreen> {
               _formatTimestamp(msg.timestamp),
               style: TextStyle(
                 fontSize: 10,
-                color: (isMine
-                        ? theme.colorScheme.onPrimaryContainer
-                        : theme.colorScheme.onSurface)
-                    .withValues(alpha: 0.6),
+                color:
+                    (isMine
+                            ? theme.colorScheme.onPrimaryContainer
+                            : theme.colorScheme.onSurface)
+                        .withValues(alpha: 0.6),
               ),
             ),
           ],

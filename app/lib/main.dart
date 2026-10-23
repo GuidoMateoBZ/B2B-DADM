@@ -5,6 +5,7 @@ import 'presentation/broadcast_screen.dart';
 import 'presentation/chat_screen.dart';
 import 'presentation/home_screen.dart';
 import 'providers/chat_provider.dart';
+import 'providers/contact_provider.dart';
 import 'providers/nearby_provider.dart';
 import 'providers/node_id_provider.dart';
 import 'services/local_notification_service.dart';
@@ -34,16 +35,18 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        ChangeNotifierProvider(
-          create: (_) => NodeIdProvider()..loadId(),
-        ),
+        ChangeNotifierProvider(create: (_) => NodeIdProvider()..loadId()),
         ChangeNotifierProvider(
           create: (_) => ChatProvider()..loadConversations(),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ContactProvider()..loadContacts(),
         ),
         ChangeNotifierProxyProvider<ChatProvider, NearbyProvider>(
           create: (_) => NearbyProvider(),
           update: (_, chatProvider, nearbyProvider) =>
-              (nearbyProvider ?? NearbyProvider())..setChatProvider(chatProvider),
+              (nearbyProvider ?? NearbyProvider())
+                ..setChatProvider(chatProvider),
         ),
       ],
       child: MaterialApp(

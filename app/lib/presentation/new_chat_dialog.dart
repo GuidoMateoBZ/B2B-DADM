@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_scanner/mobile_scanner.dart';
+
+import '../services/node_id_validator.dart';
+import 'node_id_qr_scanner.dart';
 
 /// Diálogo modal para iniciar una nueva conversación ingresando el Node ID del destinatario.
 class NewChatDialog extends StatefulWidget {
@@ -33,42 +35,26 @@ class _NewChatDialogState extends State<NewChatDialog> {
   }
 
   Future<void> _scanNodeIdQr() async {
-    final scannedNodeId = await Navigator.of(context).push<String>(
-      MaterialPageRoute<String>(builder: (_) => const _NodeIdQrScannerScreen()),
-    );
+    final scannedNodeId = await scanNodeIdQr(context);
 
     if (scannedNodeId == null || !mounted) return;
 
     final nodeId = scannedNodeId.trim();
     setState(() {
       _controller.text = nodeId;
-      _errorText = _validationErrorFor(nodeId);
+      _errorText = NodeIdValidator.validationError(
+        nodeId,
+        myNodeId: widget.myNodeId,
+      );
     });
-  }
-
-  String? _validationErrorFor(String input) {
-    if (input.isEmpty) {
-      return 'Ingresá un Node ID válido';
-    }
-
-    if (widget.myNodeId != null && input == widget.myNodeId) {
-      return 'No podés iniciar un chat con tu propio Node ID';
-    }
-
-    if (input.toLowerCase() == 'all') {
-      return 'El identificador "all" está reservado para SOS';
-    }
-
-    if (input.length < 3) {
-      return 'El Node ID es demasiado corto';
-    }
-
-    return null;
   }
 
   void _submit() {
     final input = _controller.text.trim();
-    final error = _validationErrorFor(input);
+    final error = NodeIdValidator.validationError(
+      input,
+      myNodeId: widget.myNodeId,
+    );
     if (error != null) {
       setState(() {
         _errorText = error;
@@ -147,90 +133,6 @@ class _NewChatDialogState extends State<NewChatDialog> {
         ),
         FilledButton(onPressed: _submit, child: const Text('Iniciar Chat')),
       ],
-    );
-  }
-}
-
-class _NodeIdQrScannerScreen extends StatefulWidget {
-  const _NodeIdQrScannerScreen();
-
-  @override
-  State<_NodeIdQrScannerScreen> createState() => _NodeIdQrScannerScreenState();
-}
-
-class _NodeIdQrScannerScreenState extends State<_NodeIdQrScannerScreen> {
-  final MobileScannerController _controller = MobileScannerController(
-    formats: const [BarcodeFormat.qrCode],
-  );
-  bool _hasScanned = false;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  void _onDetect(BarcodeCapture capture) {
-    if (_hasScanned || capture.barcodes.isEmpty) return;
-
-    final value = capture.barcodes.first.rawValue;
-    if (value == null || value.trim().isEmpty) return;
-
-    _hasScanned = true;
-    Navigator.of(context).pop(value);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Escanear Node ID')),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _onDetect,
-            errorBuilder: (context, error) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'No se pudo iniciar el escáner. Verificá que la cámara '
-                  'esté disponible y que la aplicación tenga permiso para '
-                  'usarla.',
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyLarge
-                      ?.copyWith(color: Colors.white),
-                ),
-              ),
-            ),
-          ),
-          IgnorePointer(
-            child: Center(
-              child: Container(
-                width: 240,
-                height: 240,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.white, width: 3),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 24,
-            right: 24,
-            bottom: 32,
-            child: Text(
-              'Enfocá el código QR del otro dispositivo',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                color: Colors.white,
-                backgroundColor: Colors.black54,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
