@@ -33,7 +33,6 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         context.read<ChatProvider>().loadConversations();
-        context.read<ContactProvider>().loadContacts();
       }
     });
   }
