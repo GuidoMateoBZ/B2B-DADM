@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../data/contact_storage.dart';
 import 'nearby_permission_handler.dart';
 
 /// Rutas usadas al abrir notificaciones.
@@ -162,10 +163,13 @@ class LocalNotificationService {
       return;
     }
 
+    final contact = await ContactStorage.getByNodeId(senderNodeId);
+    final displayName = contact?.displayName ?? senderNodeId;
+
     await _plugin.show(
       id: 0,
-      title: 'Mensaje de $senderNodeId',
-      body: 'Tienes un mensaje nuevo',
+      title: 'Mensaje de $displayName',
+      body: 'Tenés un mensaje nuevo',
       payload: senderNodeId,
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(
