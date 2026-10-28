@@ -58,14 +58,26 @@ class MainActivity : FlutterActivity() {
         )
     }
 
-    /** Snapshot completo; los estados TURNING_* cuentan como apagado. */
-    private fun readMediaState(): Map<String, Boolean> {
+    /**
+     * Snapshot completo. Las radios se informan como "on", "off" o "transitioning"
+     * (TURNING_ON/TURNING_OFF, ENABLING/DISABLING) para que Dart no decida en
+     * medio de un cambio.
+     */
+    private fun readMediaState(): Map<String, Any> {
         val ctx = applicationContext
         val btManager = ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager
-        val bluetooth = btManager?.adapter?.state == BluetoothAdapter.STATE_ON
+        val bluetooth = when (btManager?.adapter?.state) {
+            BluetoothAdapter.STATE_ON -> "on"
+            BluetoothAdapter.STATE_TURNING_ON, BluetoothAdapter.STATE_TURNING_OFF -> "transitioning"
+            else -> "off"
+        }
 
         val wifiManager = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-        val wifi = wifiManager?.wifiState == WifiManager.WIFI_STATE_ENABLED
+        val wifi = when (wifiManager?.wifiState) {
+            WifiManager.WIFI_STATE_ENABLED -> "on"
+            WifiManager.WIFI_STATE_ENABLING, WifiManager.WIFI_STATE_DISABLING -> "transitioning"
+            else -> "off"
+        }
 
         val locationManager = ctx.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
         val location = if (locationManager == null) {

@@ -1,24 +1,43 @@
 import '../data/models/media_state.dart';
 
-/// Acción que el provider debe ejecutar tras evaluar un cambio de medios.
-enum MediaDecision {
-  /// No hace falta hacer nada.
+/// Estados del ciclo de vida de la red Mesh.
+enum MeshState {
+  /// El usuario no pidió conectar (o el inicio falló).
+  idle,
+
+  /// Advertising + discovery activos.
+  running,
+
+  /// Solo advertising: la ubicación está apagada y el discovery no puede correr.
+  /// Los enlaces existentes se preservan.
+  runningNoDiscovery,
+
+  /// Sin Bluetooth ni Wi-Fi: Nearby detenido, a la espera de que vuelva un medio.
+  pausedNoMedia,
+}
+
+/// Acción que el provider debe ejecutar tras una transición de la máquina.
+enum MeshAction {
+  /// No hace falta hacer nada (incluye repetir un estado en el que ya estamos).
   none,
 
-  /// Ni Bluetooth ni Wi-Fi: detener todo y avisar (`noMedia`).
-  pauseNoMedia,
-
-  /// Ubicación apagada: detener solo el discovery y preservar enlaces/advertising.
-  pauseDiscovery,
-
-  /// Nearby no estaba en marcha y hay medios: iniciar advertising + discovery.
+  /// Iniciar advertising y, si el estado es `running`, también discovery.
   start,
 
-  /// El Bluetooth se reinició: `stopAll` + iniciar de nuevo (los enlaces BLE murieron).
+  /// `stopAll`: se pasó a `pausedNoMedia`.
+  pause,
+
+  /// Detener solo el discovery (se apagó la ubicación).
+  stopDiscovery,
+
+  /// Volver a iniciar el discovery (volvió la ubicación).
+  startDiscovery,
+
+  /// `stopAll` + `start`: el Bluetooth cayó estando en marcha, o no hay
+  /// enlaces que preservar.
   fullRestart,
 
-  /// Cambió algo más (ej. Wi-Fi) y hay enlaces vivos: reiniciar advertising y
-  /// discovery sin cortarlos.
+  /// Reiniciar advertising (y discovery si corresponde) sin cortar los enlaces vivos.
   softRestart,
 }
 
@@ -26,8 +45,10 @@ enum MediaDecision {
 enum SafetyAction { none, restartDiscovery, restartDiscoveryAndAdvertising }
 
 /// Lógica de decisión de la recuperación de la red Mesh, sin dependencias de
-/// Flutter ni de Nearby (igual que `MessageRelay`). Los timers (espera de 3 s,
-/// control de 60 s, fallback de 8 s) los maneja el provider.
+/// Flutter ni de Nearby (igual que `MessageRelay`): la máquina de estados del
+/// ciclo de vida ([MeshState]), el control de seguridad, el iniciador y el
+/// bloqueo manual. Los timers (espera de 3 s, control de 60 s, fallback de 8 s)
+/// los maneja el provider, que ejecuta las [MeshAction] que devuelve la máquina.
 class MeshRecoveryPolicy {
   /// Espera de estabilidad tras el último evento de medios.
   static const Duration mediaDebounce = Duration(seconds: 3);
@@ -52,71 +73,149 @@ class MeshRecoveryPolicy {
   /// Controles seguidos sin `onEndpointFound` para reiniciar también el advertising.
   static const int checksBeforeAdvertisingRestart = 3;
 
+  MeshState _state = MeshState.idle;
   MediaState? _media;
   MediaState? _lastApplied;
+
+  /// Transición observada: el Bluetooth pasó de encendido a no encendido con la
+  /// red en marcha. Los enlaces BLE murieron y hace falta un reinicio completo
+  /// cuando vuelva a estar encendido.
+  bool _bluetoothLostWhileRunning = false;
 
   /// TEMPORAL: Node IDs que el usuario desconectó a mano. No se aceptan ni se
   /// inician conexiones con ellos hasta pulsar Conectar. Sin vencimiento.
   /// Se reemplazará por un mensaje de despedida (mensajes de control en Envelope).
   final Set<String> _blockedNodes = {};
-  bool _bluetoothWasReset = false;
   int _checksWithoutFound = 0;
+
+  MeshState get state => _state;
 
   /// Último snapshot recibido (null si todavía no hay ninguno).
   MediaState? get media => _media;
 
-  /// Si Nearby puede descubrir (ubicación disponible o estado desconocido).
-  bool get canDiscover => _media?.location ?? true;
+  /// Nearby está en marcha (con o sin discovery).
+  bool get isRunning =>
+      _state == MeshState.running || _state == MeshState.runningNoDiscovery;
 
-  /// Registra un snapshot. Si el Bluetooth estuvo apagado, recuerda que los
-  /// enlaces BLE murieron hasta que se aplique un reinicio completo.
+  /// El discovery está activo.
+  bool get discoveryActive => _state == MeshState.running;
+
+  /// Registra un snapshot (sin decidir nada: la decisión espera a que los
+  /// medios estén estables). Solo memoriza la caída del Bluetooth si ocurre
+  /// con la red en marcha y como transición encendido → no encendido.
   void onMediaEvent(MediaState media) {
+    final previous = _media;
     _media = media;
-    if (!media.bluetooth) _bluetoothWasReset = true;
+    if (isRunning &&
+        previous != null &&
+        previous.bluetoothOn &&
+        !media.bluetoothOn) {
+      _bluetoothLostWhileRunning = true;
+    }
   }
 
-  /// Decide qué hacer con el último snapshot. Debe llamarse solo cuando el
-  /// estado de medios es estable (tras [mediaDebounce]), también al volver a
-  /// primer plano. Sin vecinos conectados no hay enlaces que preservar, así que
-  /// un cambio de medios se resuelve con un reinicio completo: `stopAllEndpoints`
-  /// limpia los endpoints que Nearby pudo haber dejado colgados.
-  MediaDecision decide({
-    required bool userWantsMesh,
-    required bool running,
-    int connectedCount = 0,
-  }) {
+  /// Evento: el usuario pulsó Conectar.
+  MeshAction connect() {
+    _resetMemory();
     final media = _media;
+    _lastApplied = media;
+    if (media != null && media.noTransport) {
+      _state = MeshState.pausedNoMedia;
+      return MeshAction.none;
+    }
+    _state = (media == null || media.location)
+        ? MeshState.running
+        : MeshState.runningNoDiscovery;
+    return MeshAction.start;
+  }
 
-    if (!userWantsMesh) {
-      _bluetoothWasReset = false;
-      _lastApplied = null;
-      return MediaDecision.none;
-    }
-    if (media == null) {
-      return running ? MediaDecision.none : MediaDecision.start;
-    }
+  /// Evento: el usuario pulsó Desconectar.
+  void disconnect() {
+    _state = MeshState.idle;
+    _resetMemory();
+  }
+
+  /// Evento: no se pudo iniciar ni el advertising ni el discovery.
+  void onStartFailed() {
+    _state = MeshState.idle;
+    _resetMemory();
+  }
+
+  /// Evento: los medios están estables (tras [mediaDebounce] o al volver a
+  /// primer plano). Aplica la tabla de transiciones; repetir el estado en el
+  /// que ya se está no genera acciones.
+  MeshAction onMediaStable({required int connectedCount}) {
+    final media = _media;
+    if (_state == MeshState.idle || media == null) return MeshAction.none;
+    // Radios en transición: se decide con el próximo snapshot (llega cuando
+    // la radio termina de cambiar).
+    if (!media.stable) return MeshAction.none;
 
     final previous = _lastApplied;
     _lastApplied = media;
 
-    if (media.noTransport) {
-      _bluetoothWasReset = false;
-      return MediaDecision.pauseNoMedia;
-    }
-    if (!media.location) return MediaDecision.pauseDiscovery;
+    switch (_state) {
+      case MeshState.idle:
+        return MeshAction.none;
 
-    if (!running) {
-      _bluetoothWasReset = false;
-      return MediaDecision.start;
+      case MeshState.pausedNoMedia:
+        if (media.noTransport) return MeshAction.none;
+        _bluetoothLostWhileRunning = false;
+        _state = media.location
+            ? MeshState.running
+            : MeshState.runningNoDiscovery;
+        return MeshAction.start;
+
+      case MeshState.running:
+        if (media.noTransport) return _pause();
+        if (!media.location) {
+          _state = MeshState.runningNoDiscovery;
+          return MeshAction.stopDiscovery;
+        }
+        return _restartIfNeeded(previous, media, connectedCount);
+
+      case MeshState.runningNoDiscovery:
+        if (media.noTransport) return _pause();
+        if (media.location) {
+          _state = MeshState.running;
+          if (_bluetoothLostWhileRunning && media.bluetoothOn) {
+            _bluetoothLostWhileRunning = false;
+            return MeshAction.fullRestart;
+          }
+          return MeshAction.startDiscovery;
+        }
+        return _restartIfNeeded(previous, media, connectedCount);
     }
-    if (_bluetoothWasReset && media.bluetooth) {
-      _bluetoothWasReset = false;
-      return MediaDecision.fullRestart;
+  }
+
+  MeshAction _pause() {
+    _state = MeshState.pausedNoMedia;
+    _bluetoothLostWhileRunning = false;
+    return MeshAction.pause;
+  }
+
+  /// Dentro de un estado en marcha: reinicio completo si cayó el Bluetooth o
+  /// si no hay enlaces que preservar; suave si los hay; nada si los medios no
+  /// cambiaron desde la última decisión.
+  MeshAction _restartIfNeeded(
+    MediaState? previous,
+    MediaState media,
+    int connectedCount,
+  ) {
+    if (_bluetoothLostWhileRunning && media.bluetoothOn) {
+      _bluetoothLostWhileRunning = false;
+      return MeshAction.fullRestart;
     }
-    if (previous == media) return MediaDecision.none;
+    if (previous == media) return MeshAction.none;
     return connectedCount == 0
-        ? MediaDecision.fullRestart
-        : MediaDecision.softRestart;
+        ? MeshAction.fullRestart
+        : MeshAction.softRestart;
+  }
+
+  void _resetMemory() {
+    _bluetoothLostWhileRunning = false;
+    _lastApplied = null;
+    _checksWithoutFound = 0;
   }
 
   /// Un `onEndpointFound` reinicia la cuenta del control de seguridad.

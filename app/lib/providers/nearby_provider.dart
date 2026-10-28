@@ -44,15 +44,10 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   NearbyState _state = NearbyState.idle;
   NearbyState get state => _state;
 
-  /// Intención del usuario: solo cambia con los botones Conectar / Desconectar.
-  bool _userWantsMesh = false;
-  bool get isSearching => _userWantsMesh;
-
-  /// Nearby está efectivamente en marcha (advertising + discovery). Lo controla el provider.
-  bool _nearbyRunning = false;
-
-  /// Motivo de la pausa automática (`noMedia` / `noLocation`), o null.
-  NearbyState? _pausedReason;
+  /// El usuario pidió conectar: la máquina de estados no está en `idle`.
+  /// El ciclo de vida de la red (en marcha, sin discovery, pausada) lo lleva
+  /// `MeshRecoveryPolicy`.
+  bool get isSearching => _policy.state != MeshState.idle;
 
   final List<DiscoveredEndpoint> _discoveredEndpoints = [];
   List<DiscoveredEndpoint> get discoveredEndpoints =>
@@ -151,34 +146,32 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _relay = MessageRelay(myNodeId: nodeId);
     _policy.clearBlocks();
-    _userWantsMesh = true;
     _errorMessage = null;
-    _pausedReason = null;
     _discoveredEndpoints.clear();
 
     final media = await _mediaService.current();
     if (media != null) _policy.onMediaEvent(media);
 
-    await _enqueue(_applyMediaRules);
+    await _enqueue(() => _execute(_policy.connect()));
   }
 
-  /// Inicia advertising + discovery. Lo usan el botón Conectar y los reinicios
-  /// automáticos: no pide permisos ni recrea el MessageRelay.
+  /// Inicia advertising y, si la máquina está en `running`, también discovery.
+  /// Lo usan el botón Conectar y los reinicios automáticos: no pide permisos
+  /// ni recrea el MessageRelay.
   Future<void> _startMesh() async {
     final nodeId = _myNodeId;
     if (nodeId == null) return;
 
-    _pausedReason = null;
     _errorMessage = null;
-    _state = NearbyState.searching;
+    _updateCurrentState();
     notifyListeners();
 
     final advResult = await _service.startAdvertising(nodeId);
-    final disResult = await _service.startDiscovery(nodeId);
+    final disResult =
+        _policy.discoveryActive ? await _service.startDiscovery(nodeId) : true;
 
     if (!advResult && !disResult) {
-      _userWantsMesh = false;
-      _nearbyRunning = false;
+      _policy.onStartFailed();
       _cancelSafetyTimer();
       _state = NearbyState.error;
       _errorMessage = _service.lastError ??
@@ -192,7 +185,6 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       );
     }
 
-    _nearbyRunning = true;
     _startSafetyTimer();
     _updateCurrentState();
     notifyListeners();
@@ -242,9 +234,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Detiene todas las conexiones, advertising y discovery.
   Future<void> stopSearching() => _enqueue(() async {
-        _userWantsMesh = false;
-        _nearbyRunning = false;
-        _pausedReason = null;
+        _policy.disconnect();
         _mediaDebounce?.cancel();
         _cancelSafetyTimer();
         await _safeStopAll();
@@ -392,7 +382,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
           _discoveredEndpoints.any((e) => e.endpointId == endpointId);
       if (!stillVisible) {
         debugPrint('[NearbyProvider] Conexión a $endpointId cancelada: ya no está visible');
-      } else if (_nearbyRunning &&
+      } else if (_policy.isRunning &&
           !_connectedEndpoints.containsKey(endpointId) &&
           !_connectingEndpoints.contains(endpointId) &&
           !(nodeId != null && _policy.isBlocked(nodeId))) {
@@ -475,7 +465,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     _relay.removeNeighbor(endpointId);
     _connectingEndpoints.remove(endpointId);
 
-    if (nodeId != null && !manual && _nearbyRunning) {
+    if (nodeId != null && !manual && _policy.isRunning) {
       // Caída involuntaria: el par sigue anunciándose, así que Nearby no vuelve a
       // emitir onEndpointFound. Mientras no llegue onEndpointLost su endpointId
       // sigue vigente: se lo vuelve a registrar y se programa un único intento.
@@ -501,7 +491,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// par desconectado vuelva a aparecer y aplique la lógica del iniciador.
   Future<void> _rediscover() async {
     final nodeId = _myNodeId;
-    if (!_nearbyRunning || nodeId == null || !_policy.canDiscover) return;
+    if (!_policy.discoveryActive || nodeId == null) return;
     debugPrint('[NearbyProvider] Desconexión involuntaria: reiniciando discovery');
     await _service.restartDiscovery(nodeId);
   }
@@ -543,18 +533,17 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  /// Deriva el estado de la UI del estado de la máquina y de las listas de vecinos.
   void _updateCurrentState() {
-    if (!_userWantsMesh) {
-      _state = NearbyState.idle;
-    } else if (_connectedEndpoints.isNotEmpty) {
-      _state = NearbyState.connected;
-    } else if (_pausedReason != null) {
-      _state = _pausedReason!;
-    } else if (_connectingEndpoints.isNotEmpty) {
-      _state = NearbyState.connecting;
-    } else {
-      _state = NearbyState.searching;
-    }
+    _state = switch (_policy.state) {
+      MeshState.idle =>
+        _errorMessage != null ? NearbyState.error : NearbyState.idle,
+      MeshState.pausedNoMedia => NearbyState.noMedia,
+      _ when _connectedEndpoints.isNotEmpty => NearbyState.connected,
+      MeshState.runningNoDiscovery => NearbyState.noLocation,
+      _ when _connectingEndpoints.isNotEmpty => NearbyState.connecting,
+      _ => NearbyState.searching,
+    };
   }
 
   // ── Recuperación automática (medios + control de seguridad) ──
@@ -580,51 +569,43 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     );
   }
 
-  Future<void> _applyMediaRules() async {
-    final decision = _policy.decide(
-      userWantsMesh: _userWantsMesh,
-      running: _nearbyRunning,
-      connectedCount: connectedCount,
-    );
-    if (decision != MediaDecision.none) {
-      debugPrint('[NearbyProvider] Medios -> $decision');
-    }
+  Future<void> _applyMediaRules() =>
+      _execute(_policy.onMediaStable(connectedCount: connectedCount));
 
-    switch (decision) {
-      case MediaDecision.none:
+  /// Ejecuta la acción que decidió la máquina de estados (`MeshRecoveryPolicy`).
+  /// La máquina ya pasó al nuevo estado; acá solo se actúa sobre Nearby.
+  Future<void> _execute(MeshAction action) async {
+    if (action != MeshAction.none) {
+      debugPrint('[NearbyProvider] Red: $action -> ${_policy.state.name}');
+    }
+    final nodeId = _myNodeId;
+    switch (action) {
+      case MeshAction.none:
         break;
-      case MediaDecision.pauseNoMedia:
-        await _pauseMesh(NearbyState.noMedia);
-      case MediaDecision.pauseDiscovery:
-        // Los enlaces y el advertising no dependen de la ubicación: se preservan.
-        _pausedReason = NearbyState.noLocation;
-        if (_nearbyRunning) await _service.stopDiscovery();
-        _discoveredEndpoints.clear();
-        _updateCurrentState();
-        notifyListeners();
-      case MediaDecision.start:
+      case MeshAction.start:
         await _startMesh();
-      case MediaDecision.fullRestart:
-        // Los enlaces BLE ya murieron: se evitan las conexiones fantasma.
+        return;
+      case MeshAction.pause:
+        _cancelSafetyTimer();
+        await _safeStopAll();
+        _clearNeighbors();
+      case MeshAction.stopDiscovery:
+        // Los enlaces y el advertising no dependen de la ubicación: se preservan.
+        await _service.stopDiscovery();
+        _discoveredEndpoints.clear();
+      case MeshAction.startDiscovery:
+        if (nodeId != null) await _service.startDiscovery(nodeId);
+      case MeshAction.fullRestart:
+        // Cayó el Bluetooth (los enlaces BLE murieron) o no hay enlaces que preservar.
         await _safeStopAll();
         _clearNeighbors();
         await _startMesh();
-      case MediaDecision.softRestart:
+        return;
+      case MeshAction.softRestart:
         // Sin stopAllEndpoints: se preservan los enlaces que sobrevivieron.
-        _pausedReason = null;
         _discoveredEndpoints.clear();
         await _restartAdvertisingAndDiscovery();
-        _updateCurrentState();
-        notifyListeners();
     }
-  }
-
-  Future<void> _pauseMesh(NearbyState reason) async {
-    _cancelSafetyTimer();
-    await _safeStopAll();
-    _clearNeighbors();
-    _nearbyRunning = false;
-    _pausedReason = reason;
     _updateCurrentState();
     notifyListeners();
   }
@@ -633,7 +614,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     final nodeId = _myNodeId;
     if (nodeId == null) return;
     await _service.restartAdvertising(nodeId);
-    await _service.restartDiscovery(nodeId);
+    if (_policy.discoveryActive) await _service.restartDiscovery(nodeId);
   }
 
   void _startSafetyTimer() {
@@ -652,7 +633,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Control de seguridad: cubre al dispositivo que no tuvo el cambio de medio.
   Future<void> _safetyCheck() async {
     final nodeId = _myNodeId;
-    if (!_nearbyRunning || nodeId == null || !_policy.canDiscover) return;
+    if (!_policy.discoveryActive || nodeId == null) return;
 
     final action = _policy.onSafetyTick(connectedCount: connectedCount);
     if (action == SafetyAction.none) return;
@@ -695,7 +676,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed || !_userWantsMesh) return;
+    if (state != AppLifecycleState.resumed || !isSearching) return;
     // Pasa por la misma espera de estabilidad que los eventos: al cambiar el
     // modo avión desde el panel rápido, la app vuelve a `resumed` en plena
     // transición de los medios y aplicar las reglas ahí reiniciaría demasiado pronto.

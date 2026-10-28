@@ -1,7 +1,21 @@
+/// Estado de una radio (Bluetooth o Wi-Fi). `transitioning` cubre los estados
+/// intermedios de Android (`TURNING_ON`/`TURNING_OFF`, `ENABLING`/`DISABLING`).
+enum RadioState {
+  off,
+  transitioning,
+  on;
+
+  static RadioState parse(Object? value) => switch (value) {
+        'on' || true => RadioState.on,
+        'transitioning' => RadioState.transitioning,
+        _ => RadioState.off,
+      };
+}
+
 /// Snapshot del estado de los medios que usa Nearby Connections.
 class MediaState {
-  final bool bluetooth;
-  final bool wifi;
+  final RadioState bluetooth;
+  final RadioState wifi;
   final bool location;
   final bool airplane;
 
@@ -13,14 +27,21 @@ class MediaState {
   });
 
   factory MediaState.fromMap(Map<dynamic, dynamic> map) => MediaState(
-        bluetooth: map['bluetooth'] == true,
-        wifi: map['wifi'] == true,
+        bluetooth: RadioState.parse(map['bluetooth']),
+        wifi: RadioState.parse(map['wifi']),
         location: map['location'] == true,
         airplane: map['airplane'] == true,
       );
 
-  /// Ni Bluetooth ni Wi-Fi: no queda ningún canal para Nearby.
-  bool get noTransport => !bluetooth && !wifi;
+  bool get bluetoothOn => bluetooth == RadioState.on;
+  bool get wifiOn => wifi == RadioState.on;
+
+  /// Ninguna radio está en transición: se puede decidir con este snapshot.
+  bool get stable =>
+      bluetooth != RadioState.transitioning && wifi != RadioState.transitioning;
+
+  /// Ni Bluetooth ni Wi-Fi encendidos: no queda ningún canal para Nearby.
+  bool get noTransport => !bluetoothOn && !wifiOn;
 
   @override
   bool operator ==(Object other) =>
@@ -35,5 +56,5 @@ class MediaState {
 
   @override
   String toString() =>
-      'MediaState(bt=$bluetooth, wifi=$wifi, loc=$location, airplane=$airplane)';
+      'MediaState(bt=${bluetooth.name}, wifi=${wifi.name}, loc=$location, airplane=$airplane)';
 }

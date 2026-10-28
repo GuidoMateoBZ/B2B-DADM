@@ -2,122 +2,190 @@ import 'package:app/data/models/media_state.dart';
 import 'package:app/services/mesh_recovery_policy.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+const on = RadioState.on;
+const off = RadioState.off;
+const moving = RadioState.transitioning;
+
 MediaState media({
-  bool bt = true,
-  bool wifi = true,
+  RadioState bt = on,
+  RadioState wifi = on,
   bool loc = true,
   bool airplane = false,
 }) =>
     MediaState(bluetooth: bt, wifi: wifi, location: loc, airplane: airplane);
 
 void main() {
-  group('MeshRecoveryPolicy - reglas de medios', () {
+  group('MediaState', () {
+    test('parsea los tres estados de radio desde el canal nativo', () {
+      final m = MediaState.fromMap({
+        'bluetooth': 'transitioning',
+        'wifi': 'on',
+        'location': true,
+        'airplane': false,
+      });
+      expect(m.bluetooth, moving);
+      expect(m.wifi, on);
+      expect(m.stable, isFalse);
+      expect(media(bt: off, wifi: off).noTransport, isTrue);
+      expect(media(bt: moving, wifi: off).noTransport, isTrue);
+    });
+  });
+
+  group('MeshRecoveryPolicy - máquina de estados', () {
     late MeshRecoveryPolicy policy;
 
     setUp(() {
       policy = MeshRecoveryPolicy();
     });
 
-    MediaDecision decide({
-      bool wants = true,
-      bool running = true,
-      int connected = 1,
-    }) =>
-        policy.decide(
-          userWantsMesh: wants,
-          running: running,
-          connectedCount: connected,
-        );
+    /// Lleva la máquina a `running` con [initial] como último estado aplicado.
+    void startRunning([MediaState? initial]) {
+      policy.onMediaEvent(initial ?? media());
+      expect(policy.connect(), MeshAction.start);
+      expect(policy.state, MeshState.running);
+    }
 
-    test('sin intención del usuario nunca actúa', () {
-      policy.onMediaEvent(media(bt: false, wifi: false));
-      expect(decide(wants: false), MediaDecision.none);
+    MeshAction stable(MediaState m, {int connected = 1}) {
+      policy.onMediaEvent(m);
+      return policy.onMediaStable(connectedCount: connected);
+    }
+
+    test('en idle los medios no generan acciones', () {
+      expect(stable(media(bt: off, wifi: off)), MeshAction.none);
+      expect(policy.state, MeshState.idle);
     });
 
-    test('sin snapshot: inicia si no está en marcha, si no no hace nada', () {
-      expect(decide(running: false), MediaDecision.start);
-      expect(decide(running: true), MediaDecision.none);
+    test('Conectar sin snapshot inicia en running', () {
+      expect(policy.connect(), MeshAction.start);
+      expect(policy.state, MeshState.running);
     });
 
-    test('Bluetooth y Wi-Fi apagados pausa por noMedia', () {
-      policy.onMediaEvent(media(bt: false, wifi: false));
-      expect(decide(), MediaDecision.pauseNoMedia);
+    test('Conectar sin medios queda en pausedNoMedia sin acción', () {
+      policy.onMediaEvent(media(bt: off, wifi: off));
+      expect(policy.connect(), MeshAction.none);
+      expect(policy.state, MeshState.pausedNoMedia);
     });
 
-    test('el modo avión por sí solo no cuenta como todo apagado', () {
-      policy.onMediaEvent(media(wifi: false, airplane: true));
-      expect(decide(running: false), MediaDecision.start);
-    });
-
-    test('ubicación apagada solo pausa el discovery', () {
+    test('Conectar sin ubicación inicia solo advertising', () {
       policy.onMediaEvent(media(loc: false));
-      expect(decide(), MediaDecision.pauseDiscovery);
+      expect(policy.connect(), MeshAction.start);
+      expect(policy.state, MeshState.runningNoDiscovery);
+      expect(policy.discoveryActive, isFalse);
     });
 
-    test('ubicación apagada con Nearby detenido también queda pausada', () {
-      policy.onMediaEvent(media(loc: false));
-      expect(decide(running: false), MediaDecision.pauseDiscovery);
+    test('Desconectar vuelve a idle', () {
+      startRunning();
+      policy.disconnect();
+      expect(policy.state, MeshState.idle);
     });
 
-    test('vuelve la ubicación estando en marcha: reinicio suave', () {
-      policy.onMediaEvent(media(loc: false));
-      decide();
-      policy.onMediaEvent(media());
-      expect(decide(), MediaDecision.softRestart);
+    test('si el inicio falla vuelve a idle', () {
+      startRunning();
+      policy.onStartFailed();
+      expect(policy.state, MeshState.idle);
     });
 
-    test('vuelve algún medio estando en noMedia: inicia', () {
-      policy.onMediaEvent(media(bt: false, wifi: false));
-      expect(decide(), MediaDecision.pauseNoMedia);
-      policy.onMediaEvent(media(wifi: false));
-      expect(decide(running: false), MediaDecision.start);
+    test('running sin medios pausa con un único stopAll (idempotente)', () {
+      startRunning();
+      expect(stable(media(bt: off, wifi: off, airplane: true)), MeshAction.pause);
+      expect(policy.state, MeshState.pausedNoMedia);
+      // Volver de la cortina con el mismo snapshot, o cambiar solo el modo avión.
+      expect(stable(media(bt: off, wifi: off, airplane: true)), MeshAction.none);
+      expect(stable(media(bt: off, wifi: off)), MeshAction.none);
+      expect(policy.state, MeshState.pausedNoMedia);
     });
 
-    test('Bluetooth pasó por OFF y volvió: reinicio completo, una sola vez', () {
-      policy.onMediaEvent(media(wifi: false, airplane: true));
-      decide(); // baseline
-      policy.onMediaEvent(media(bt: false, wifi: false, airplane: true));
-      policy.onMediaEvent(media(wifi: false, airplane: true));
-      expect(decide(), MediaDecision.fullRestart);
-      expect(decide(), MediaDecision.none);
+    test('con radios en transición no se decide', () {
+      startRunning();
+      expect(stable(media(bt: moving, wifi: off)), MeshAction.none);
+      expect(policy.state, MeshState.running);
     });
 
-    test('Bluetooth aún apagado con Wi-Fi: no hace reinicio completo', () {
-      policy.onMediaEvent(media());
-      decide();
-      policy.onMediaEvent(media(bt: false));
-      expect(decide(), MediaDecision.softRestart);
-      policy.onMediaEvent(media());
-      expect(decide(), MediaDecision.fullRestart);
+    test('pausedNoMedia: vuelve un medio estable -> start', () {
+      startRunning();
+      stable(media(bt: off, wifi: off));
+      expect(stable(media(bt: moving, wifi: off)), MeshAction.none);
+      expect(stable(media(bt: on, wifi: off)), MeshAction.start);
+      expect(policy.state, MeshState.running);
     });
 
-    test('modo avión sin Bluetooth reiniciado y sin vecinos: reinicio completo', () {
-      // Android moderno mantiene el Bluetooth encendido en modo avión: no hay
-      // paso por OFF, pero los enlaces cayeron con el Wi-Fi.
-      policy.onMediaEvent(media());
-      decide();
-      policy.onMediaEvent(media(wifi: false, airplane: true));
-      expect(decide(connected: 0), MediaDecision.fullRestart);
+    test('pausedNoMedia: vuelve un medio sin ubicación -> start sin discovery', () {
+      startRunning();
+      stable(media(bt: off, wifi: off));
+      expect(stable(media(wifi: off, loc: false)), MeshAction.start);
+      expect(policy.state, MeshState.runningNoDiscovery);
     });
 
-    test('solo cambió el Wi-Fi: reinicio suave que preserva enlaces', () {
-      policy.onMediaEvent(media());
-      decide();
-      policy.onMediaEvent(media(wifi: false));
-      expect(decide(), MediaDecision.softRestart);
+    test('Wi-Fi vuelve antes que el Bluetooth: un start y un solo reinicio al estabilizarse', () {
+      startRunning();
+      stable(media(bt: off, wifi: off));
+      expect(stable(media(bt: off, wifi: on)), MeshAction.start);
+      // El Bluetooth arranca después: TURNING_ON no cuenta como caída.
+      expect(stable(media(bt: moving, wifi: on), connected: 0), MeshAction.none);
+      expect(stable(media(bt: on, wifi: on), connected: 0), MeshAction.fullRestart);
+      expect(stable(media(bt: on, wifi: on), connected: 0), MeshAction.none);
     });
 
-    test('mismo snapshot repetido (ej. al volver a primer plano): no hace nada', () {
-      policy.onMediaEvent(media());
-      expect(decide(running: false), MediaDecision.start);
-      policy.onMediaEvent(media());
-      expect(decide(), MediaDecision.none);
+    test('el Bluetooth cae y vuelve en marcha (modo avión viejo): reinicio completo', () {
+      startRunning(media(wifi: off));
+      policy.onMediaEvent(media(bt: moving, wifi: off, airplane: true));
+      policy.onMediaEvent(media(bt: off, wifi: off, airplane: true));
+      policy.onMediaEvent(media(bt: moving, wifi: off, airplane: true));
+      expect(
+        stable(media(bt: on, wifi: off, airplane: true), connected: 2),
+        MeshAction.fullRestart,
+      );
+      expect(stable(media(bt: on, wifi: off, airplane: true)), MeshAction.none);
     });
 
-    test('canDiscover refleja la ubicación', () {
-      expect(policy.canDiscover, isTrue);
-      policy.onMediaEvent(media(loc: false));
-      expect(policy.canDiscover, isFalse);
+    test('modo avión con Bluetooth encendido: sin vecinos reinicio completo', () {
+      startRunning();
+      expect(stable(media(wifi: off, airplane: true), connected: 0), MeshAction.fullRestart);
+    });
+
+    test('solo cambió el Wi-Fi con vecinos: reinicio suave', () {
+      startRunning();
+      expect(stable(media(wifi: off), connected: 1), MeshAction.softRestart);
+      expect(policy.state, MeshState.running);
+    });
+
+    test('mismo snapshot repetido en running: nada', () {
+      startRunning();
+      expect(stable(media()), MeshAction.none);
+    });
+
+    test('ubicación: running -> runningNoDiscovery -> running', () {
+      startRunning();
+      expect(stable(media(loc: false)), MeshAction.stopDiscovery);
+      expect(policy.state, MeshState.runningNoDiscovery);
+      expect(stable(media(loc: false)), MeshAction.none);
+      expect(stable(media()), MeshAction.startDiscovery);
+      expect(policy.state, MeshState.running);
+    });
+
+    test('runningNoDiscovery sin medios -> pausa', () {
+      startRunning();
+      stable(media(loc: false));
+      expect(stable(media(bt: off, wifi: off, loc: false)), MeshAction.pause);
+      expect(policy.state, MeshState.pausedNoMedia);
+    });
+
+    test('caída del Bluetooth sin ubicación: reinicio completo sin discovery', () {
+      startRunning();
+      stable(media(loc: false));
+      policy.onMediaEvent(media(bt: off, loc: false));
+      expect(stable(media(loc: false)), MeshAction.fullRestart);
+      expect(policy.state, MeshState.runningNoDiscovery);
+      expect(stable(media()), MeshAction.startDiscovery);
+    });
+
+    test('vuelven a la vez el Bluetooth y la ubicación: reinicio completo', () {
+      startRunning();
+      stable(media(loc: false));
+      policy.onMediaEvent(media(bt: off, wifi: on, loc: false));
+      expect(stable(media(bt: off, wifi: on, loc: false), connected: 1), MeshAction.softRestart);
+      expect(stable(media()), MeshAction.fullRestart);
+      expect(policy.state, MeshState.running);
     });
   });
 
