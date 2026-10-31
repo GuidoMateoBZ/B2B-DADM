@@ -3,9 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../data/models/chat_message.dart';
+import '../data/models/mesh_contact.dart';
+import '../providers/contact_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/nearby_provider.dart';
+import '../providers/node_id_provider.dart';
 import '../services/local_notification_service.dart';
+import 'contact_form_dialog.dart';
 
 /// Pantalla de chat 1-a-1 con un nodo específico (por Node ID / UUID).
 /// Soporta comunicación directa o multi-hop ruteada a través de la red mesh.
@@ -37,7 +41,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final routeArgs = ModalRoute.of(context)?.settings.arguments;
-    final target = widget.targetNodeId ?? (routeArgs is String ? routeArgs : null);
+    final target =
+        widget.targetNodeId ?? (routeArgs is String ? routeArgs : null);
 
     if (target != null && target != _resolvedTargetNodeId) {
       _resolvedTargetNodeId = target;
@@ -74,6 +79,73 @@ class _ChatScreenState extends State<ChatScreen> {
     _scrollToBottom();
   }
 
+  Future<void> _editContact(String nodeId, MeshContact? contact) async {
+    final result = await showDialog<ContactFormResult>(
+      context: context,
+      builder: (_) => ContactFormDialog(
+        myNodeId: context.read<NodeIdProvider>().nodeId,
+        existingNodeId: contact?.nodeId,
+        initialNodeId: contact == null ? nodeId : null,
+        initialAlias: contact?.alias,
+      ),
+    );
+    if (result == null || !mounted) return;
+
+    try {
+      final contacts = context.read<ContactProvider>();
+      if (contact == null) {
+        final inserted = await contacts.addContact(result.nodeId, result.alias);
+        if (mounted) {
+          _showMessage(
+            inserted ? 'Contacto guardado' : 'Ese Node ID ya está en contactos',
+          );
+        }
+      } else {
+        await contacts.updateAlias(contact.nodeId, result.alias);
+        if (mounted) _showMessage('Alias actualizado');
+      }
+    } catch (error) {
+      if (mounted) _showMessage('No se pudo guardar el contacto: $error');
+    }
+  }
+
+  Future<void> _removeContact(MeshContact contact) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Quitar contacto'),
+        content: Text(
+          '¿Querés quitar a ${contact.displayName} de la agenda? '
+          'El historial de chat se conservará.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Quitar'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await context.read<ContactProvider>().removeContact(contact.nodeId);
+      if (mounted) _showMessage('Contacto quitado; el historial se conservó');
+    } catch (error) {
+      if (mounted) _showMessage('No se pudo quitar el contacto: $error');
+    }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating),
+    );
+  }
+
   String _formatTimestamp(int ms) {
     final dt = DateTime.fromMillisecondsSinceEpoch(ms);
     final now = DateTime.now();
@@ -87,9 +159,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final chatProvider = context.watch<ChatProvider>();
-    final nearbyProvider = context.watch<NearbyProvider>();
     final target = _resolvedTargetNodeId ?? 'Desconocido';
+    final chatProvider = context.watch<ChatProvider>();
+    final contact = context.watch<ContactProvider>().findByNodeId(target);
+    final nearbyProvider = context.watch<NearbyProvider>();
     final reachability = nearbyProvider.getReachability(target);
     final messages = chatProvider.messages;
     final theme = Theme.of(context);
@@ -105,15 +178,24 @@ class _ChatScreenState extends State<ChatScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              target,
-              style: const TextStyle(
-                fontFamily: 'monospace',
-                fontWeight: FontWeight.bold,
-                fontSize: 15,
-              ),
+              contact?.displayName ?? target,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
             ),
             Row(
               children: [
+                if (contact != null) ...[
+                  Flexible(
+                    child: Text(
+                      target,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
                 _buildReachabilityDot(reachability),
                 const SizedBox(width: 5),
                 Text(
@@ -140,8 +222,15 @@ class _ChatScreenState extends State<ChatScreen> {
             },
           ),
           PopupMenuButton<String>(
-            onSelected: (val) async {
-              if (val == 'delete') {
+            onSelected: (value) async {
+              if (value == 'add_contact' || value == 'edit_contact') {
+                final nodeId = _resolvedTargetNodeId;
+                if (nodeId != null) {
+                  await _editContact(nodeId, contact);
+                }
+              } else if (value == 'remove_contact' && contact != null) {
+                await _removeContact(contact);
+              } else if (value == 'delete') {
                 final confirm = await showDialog<bool>(
                   context: context,
                   builder: (ctx) => AlertDialog(
@@ -168,6 +257,39 @@ class _ChatScreenState extends State<ChatScreen> {
               }
             },
             itemBuilder: (_) => [
+              if (_resolvedTargetNodeId != null && contact == null)
+                const PopupMenuItem(
+                  value: 'add_contact',
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_add_alt_1, size: 20),
+                      SizedBox(width: 8),
+                      Text('Agregar a contactos'),
+                    ],
+                  ),
+                ),
+              if (_resolvedTargetNodeId != null && contact != null) ...[
+                const PopupMenuItem(
+                  value: 'edit_contact',
+                  child: Row(
+                    children: [
+                      Icon(Icons.edit_outlined, size: 20),
+                      SizedBox(width: 8),
+                      Text('Editar alias'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'remove_contact',
+                  child: Row(
+                    children: [
+                      Icon(Icons.person_remove_outlined, size: 20),
+                      SizedBox(width: 8),
+                      Text('Quitar de contactos'),
+                    ],
+                  ),
+                ),
+              ],
               const PopupMenuItem(
                 value: 'delete',
                 child: Row(
@@ -192,7 +314,11 @@ class _ChatScreenState extends State<ChatScreen> {
               color: Colors.amber.withValues(alpha: 0.15),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline, size: 16, color: Colors.orange),
+                  const Icon(
+                    Icons.info_outline,
+                    size: 16,
+                    color: Colors.orange,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -313,10 +439,7 @@ class _ChatScreenState extends State<ChatScreen> {
     return Container(
       width: 8,
       height: 8,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 
@@ -355,8 +478,9 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
         child: Column(
-          crossAxisAlignment:
-              isMine ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment: isMine
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
           children: [
             if (!isMine) ...[
               Text(
@@ -384,10 +508,11 @@ class _ChatScreenState extends State<ChatScreen> {
               _formatTimestamp(msg.timestamp),
               style: TextStyle(
                 fontSize: 10,
-                color: (isMine
-                        ? theme.colorScheme.onPrimaryContainer
-                        : theme.colorScheme.onSurface)
-                    .withValues(alpha: 0.6),
+                color:
+                    (isMine
+                            ? theme.colorScheme.onPrimaryContainer
+                            : theme.colorScheme.onSurface)
+                        .withValues(alpha: 0.6),
               ),
             ),
           ],

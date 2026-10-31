@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
+import '../data/contact_storage.dart';
 import 'nearby_permission_handler.dart';
 
 /// Rutas usadas al abrir notificaciones.
@@ -162,9 +163,10 @@ class LocalNotificationService {
       return;
     }
 
+    final displayName = await _contactDisplayName(senderNodeId);
     await _plugin.show(
       id: 0,
-      title: 'Mensaje de $senderNodeId',
+      title: 'Mensaje de $displayName',
       body: 'Tienes un mensaje nuevo',
       payload: senderNodeId,
       notificationDetails: const NotificationDetails(
@@ -183,9 +185,10 @@ class LocalNotificationService {
   Future<void> showSosAlert(String fromNodeId, String text) async {
     if (!_initialized || appNavigationObserver.isBroadcastVisible) return;
 
+    final displayName = await _contactDisplayName(fromNodeId);
     await _plugin.show(
       id: 1,
-      title: '🚨 SOS de $fromNodeId',
+      title: '🚨 SOS de $displayName',
       body: text,
       payload: 'all',
       notificationDetails: const NotificationDetails(
@@ -198,6 +201,19 @@ class LocalNotificationService {
         ),
       ),
     );
+  }
+
+  Future<String> _contactDisplayName(String nodeId) async {
+    try {
+      final contact = await ContactStorage.getByNodeId(nodeId);
+      return contact?.displayName ?? nodeId;
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[LocalNotificationService] No se pudo consultar el alias de $nodeId: '
+        '$error\n$stackTrace',
+      );
+      return nodeId;
+    }
   }
 
   /// Abre el chat con [targetNodeId] sin apilarlo si ya es la ruta superior.

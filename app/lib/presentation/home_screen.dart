@@ -5,9 +5,11 @@ import 'package:qr_flutter/qr_flutter.dart';
 
 import '../data/message_storage.dart';
 import '../providers/chat_provider.dart';
+import '../providers/contact_provider.dart';
 import '../providers/nearby_provider.dart';
 import '../providers/node_id_provider.dart';
 import '../services/local_notification_service.dart';
+import 'contact_screen.dart';
 import 'new_chat_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -208,6 +210,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final nodeIdProvider = context.watch<NodeIdProvider>();
     final nearbyProvider = context.watch<NearbyProvider>();
     final chatProvider = context.watch<ChatProvider>();
+    final contactProvider = context.watch<ContactProvider>();
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -217,6 +220,11 @@ class _HomeScreenState extends State<HomeScreen> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.contacts_outlined),
+            tooltip: 'Contactos',
+            onPressed: () => Navigator.pushNamed(context, contactsRouteName),
+          ),
           // Botón directo a Broadcast / SOS
           IconButton(
             icon: const Icon(Icons.emergency, color: Colors.red),
@@ -462,6 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           context,
                           conv,
                           nearbyProvider,
+                          contactProvider,
                         );
                       },
                     ),
@@ -475,7 +484,11 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildStatusIcon(NearbyProvider nearby) {
     if (nearby.state == NearbyState.noMedia ||
         nearby.state == NearbyState.noLocation) {
-      return const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 16);
+      return const Icon(
+        Icons.warning_amber_rounded,
+        color: Colors.orange,
+        size: 16,
+      );
     }
     if (nearby.state == NearbyState.connecting ||
         (nearby.isSearching && nearby.connectedCount == 0)) {
@@ -581,6 +594,7 @@ class _HomeScreenState extends State<HomeScreen> {
     BuildContext context,
     ConversationPreview conv,
     NearbyProvider nearby,
+    ContactProvider contacts,
   ) {
     final theme = Theme.of(context);
     final isSos = conv.isBroadcast;
@@ -624,6 +638,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Chat 1-a-1
     final reachability = nearby.getReachability(conv.peerNodeId);
+    final displayName =
+        contacts.findByNodeId(conv.peerNodeId)?.displayName ?? conv.peerNodeId;
     Color statusColor;
     String statusTooltip;
     switch (reachability) {
@@ -671,21 +687,28 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       title: Text(
-        conv.peerNodeId,
-        style: const TextStyle(
-          fontFamily: 'monospace',
-          fontWeight: FontWeight.w600,
-          fontSize: 13,
-        ),
+        displayName,
+        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
       ),
-      subtitle: Text(
-        conv.lastMessageText,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 12,
-          color: theme.colorScheme.onSurfaceVariant,
-        ),
+      isThreeLine: displayName != conv.peerNodeId,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (displayName != conv.peerNodeId)
+            Text(
+              conv.peerNodeId,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+            ),
+          Text(
+            conv.lastMessageText,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 12,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
       ),
       trailing: Text(
         _formatTimestamp(conv.lastTimestamp),
