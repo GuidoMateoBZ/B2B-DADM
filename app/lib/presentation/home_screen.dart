@@ -473,6 +473,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildStatusIcon(NearbyProvider nearby) {
+    if (nearby.state == NearbyState.noMedia ||
+        nearby.state == NearbyState.noLocation) {
+      return const Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 16);
+    }
     if (nearby.state == NearbyState.connecting ||
         (nearby.isSearching && nearby.connectedCount == 0)) {
       return const SizedBox(
@@ -491,6 +495,12 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _buildStatusText(NearbyProvider nearby) {
+    if (nearby.state == NearbyState.noMedia) {
+      return 'Sin medios de conexión: activá el Bluetooth';
+    }
+    if (nearby.state == NearbyState.noLocation) {
+      return 'Activá la ubicación para buscar vecinos';
+    }
     if (nearby.connectedCount > 0) {
       return nearby.isSearching
           ? 'Red Mesh activa (Buscando vecinos)'

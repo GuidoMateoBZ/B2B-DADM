@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../data/models/chat_message.dart';
 import '../providers/chat_provider.dart';
@@ -75,7 +76,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          timeLimit: Duration(seconds: 12),
         ),
       );
 
@@ -97,6 +98,27 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     } finally {
       if (mounted) {
         setState(() => _loadingLocation = false);
+      }
+    }
+  }
+
+  Future<void> _openMapUrl(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      final launched = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!launched && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir la aplicación de mapas')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al abrir el mapa: $e')),
+        );
       }
     }
   }
@@ -282,9 +304,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                               size: 16,
                               color: Colors.white,
                             ),
-                      label: const Text(
-                        'SOS',
-                        style: TextStyle(
+                      label: Text(
+                        _loadingLocation ? 'Obteniendo ubicación...' : 'SOS',
+                        style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.white,
                           fontSize: 13,
@@ -347,6 +369,22 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
   Widget _buildSosCard(BuildContext context, ChatMessage msg) {
     final theme = Theme.of(context);
 
+    // Detección y extracción de link de Google Maps
+    final mapsMatch = RegExp(r'https://maps\.google\.com/\S+').firstMatch(msg.text);
+    final mapsUrl = mapsMatch?.group(0);
+
+    // Limpieza de URL cruda para mostrar únicamente el texto de ayuda
+    String cleanText = msg.text;
+    if (mapsUrl != null) {
+      cleanText = cleanText
+          .replaceAll(mapsUrl, '')
+          .replaceAll(RegExp(r'📍\s*(Mi\s+)?ubicación:\s*', caseSensitive: false), '')
+          .trim();
+      if (cleanText.isEmpty) {
+        cleanText = '🆘 SOS';
+      }
+    }
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       elevation: 1,
@@ -395,13 +433,41 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              msg.text,
+            SelectableText(
+              cleanText,
               style: const TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w500,
               ),
             ),
+            if (mapsUrl != null) ...[
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.location_on, size: 18),
+                  label: const Text('Ver ubicación en Google Maps'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: msg.isMine
+                        ? Colors.red.shade900
+                        : Colors.deepOrange.shade900,
+                    side: BorderSide(
+                      color: msg.isMine
+                          ? Colors.red.shade400
+                          : Colors.deepOrange.shade400,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                  ),
+                  onPressed: () => _openMapUrl(mapsUrl),
+                ),
+              ),
+            ],
           ],
         ),
       ),
