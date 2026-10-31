@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/node_id_validator.dart';
+import 'node_id_qr_scanner.dart';
+
 /// Diálogo modal para iniciar una nueva conversación ingresando el Node ID del destinatario.
 class NewChatDialog extends StatefulWidget {
   final String? myNodeId;
@@ -31,32 +34,28 @@ class _NewChatDialogState extends State<NewChatDialog> {
     }
   }
 
+  Future<void> _scanNodeIdQr() async {
+    final scannedNodeId = await scanNodeIdQr(context);
+
+    if (scannedNodeId == null || !mounted) return;
+
+    final nodeId = scannedNodeId.trim();
+    setState(() {
+      _controller.text = nodeId;
+      _errorText = _validationErrorFor(nodeId);
+    });
+  }
+
+  String? _validationErrorFor(String input) {
+    return NodeIdValidator.validationError(input, myNodeId: widget.myNodeId);
+  }
+
   void _submit() {
     final input = _controller.text.trim();
-    if (input.isEmpty) {
+    final error = _validationErrorFor(input);
+    if (error != null) {
       setState(() {
-        _errorText = 'Ingresá un Node ID válido';
-      });
-      return;
-    }
-
-    if (widget.myNodeId != null && input == widget.myNodeId) {
-      setState(() {
-        _errorText = 'No podés iniciar un chat con tu propio Node ID';
-      });
-      return;
-    }
-
-    if (input.toLowerCase() == 'all') {
-      setState(() {
-        _errorText = 'El identificador "all" está reservado para SOS';
-      });
-      return;
-    }
-
-    if (input.length < 3) {
-      setState(() {
-        _errorText = 'El Node ID es demasiado corto';
+        _errorText = error;
       });
       return;
     }
@@ -116,6 +115,12 @@ class _NewChatDialogState extends State<NewChatDialog> {
               },
               onSubmitted: (_) => _submit(),
             ),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _scanNodeIdQr,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: const Text('Escanear QR'),
+            ),
           ],
         ),
       ),
@@ -124,10 +129,7 @@ class _NewChatDialogState extends State<NewChatDialog> {
           onPressed: () => Navigator.of(context).pop(null),
           child: const Text('Cancelar'),
         ),
-        FilledButton(
-          onPressed: _submit,
-          child: const Text('Iniciar Chat'),
-        ),
+        FilledButton(onPressed: _submit, child: const Text('Iniciar Chat')),
       ],
     );
   }

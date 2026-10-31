@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+
 import 'models/chat_message.dart';
 
 /// Vista previa de una conversación para la lista en Home.
@@ -26,25 +27,44 @@ class MessageStorage {
   static Future<Database> get database async {
     _db ??= await openDatabase(
       join(await getDatabasesPath(), 'b2b_messages.db'),
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
-        await db.execute('''
-          CREATE TABLE messages (
-            id TEXT PRIMARY KEY,
-            text TEXT NOT NULL,
-            sender_node_id TEXT NOT NULL,
-            receiver_id TEXT NOT NULL,
-            timestamp INTEGER NOT NULL,
-            is_mine INTEGER NOT NULL
-          )
-        ''');
-        // Índice para queries por conversación y ordenamiento
-        await db.execute(
-          'CREATE INDEX idx_receiver_timestamp ON messages(receiver_id, timestamp)',
-        );
+        await _createMessagesTable(db);
+        await _createContactsTable(db);
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await _createContactsTable(db);
+        }
       },
     );
     return _db!;
+  }
+
+  static Future<void> _createMessagesTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        sender_node_id TEXT NOT NULL,
+        receiver_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        is_mine INTEGER NOT NULL
+      )
+    ''');
+    await db.execute(
+      'CREATE INDEX idx_receiver_timestamp ON messages(receiver_id, timestamp)',
+    );
+  }
+
+  static Future<void> _createContactsTable(DatabaseExecutor db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS contacts (
+        node_id TEXT PRIMARY KEY,
+        alias TEXT,
+        created_at INTEGER NOT NULL
+      )
+    ''');
   }
 
   /// Guarda un mensaje (upsert: ignora si ya existe por id)
@@ -83,18 +103,26 @@ class MessageStorage {
       GROUP BY m.receiver_id
       ORDER BY m.timestamp DESC
     ''');
-    return rows.map((r) => ConversationPreview(
-      peerNodeId: r['receiver_id'] as String,
-      lastMessageText: r['text'] as String,
-      lastTimestamp: r['timestamp'] as int,
-      isBroadcast: r['receiver_id'] == 'all',
-    )).toList();
+    return rows
+        .map(
+          (r) => ConversationPreview(
+            peerNodeId: r['receiver_id'] as String,
+            lastMessageText: r['text'] as String,
+            lastTimestamp: r['timestamp'] as int,
+            isBroadcast: r['receiver_id'] == 'all',
+          ),
+        )
+        .toList();
   }
 
   /// Elimina los mensajes de una conversación
   static Future<void> deleteConversation(String receiverId) async {
     final db = await database;
-    await db.delete('messages', where: 'receiver_id = ?', whereArgs: [receiverId]);
+    await db.delete(
+      'messages',
+      where: 'receiver_id = ?',
+      whereArgs: [receiverId],
+    );
   }
 
   /// Purga: elimina mensajes más antiguos que [days] días
@@ -103,12 +131,20 @@ class MessageStorage {
     final cutoff = DateTime.now()
         .subtract(Duration(days: days))
         .millisecondsSinceEpoch;
-    return await db.delete('messages', where: 'timestamp < ?', whereArgs: [cutoff]);
+    return await db.delete(
+      'messages',
+      where: 'timestamp < ?',
+      whereArgs: [cutoff],
+    );
   }
 
   /// Purga: elimina todos los mensajes SOS (receiver_id = 'all')
   static Future<int> purgeBroadcasts() async {
     final db = await database;
-    return await db.delete('messages', where: 'receiver_id = ?', whereArgs: ['all']);
+    return await db.delete(
+      'messages',
+      where: 'receiver_id = ?',
+      whereArgs: ['all'],
+    );
   }
 }
