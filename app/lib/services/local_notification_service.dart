@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -28,6 +29,9 @@ class AppNavigationObserver extends NavigatorObserver
 
   /// Rutas activas, ordenadas desde la raíz hasta la pantalla superior.
   final List<Route<dynamic>> _routes = [];
+  final StreamController<void> _changes = StreamController<void>.broadcast();
+
+  Stream<void> get changes => _changes.stream;
 
   /// Último estado de ciclo de vida recibido por Flutter.
   AppLifecycleState _lifecycleState =
@@ -53,19 +57,29 @@ class AppNavigationObserver extends NavigatorObserver
       _lifecycleState == AppLifecycleState.resumed &&
       currentRouteName == chatRouteName;
 
+  bool get isForeground => _lifecycleState == AppLifecycleState.resumed;
+
+  String? get visibleChatNodeId =>
+      isChatVisible && currentRouteArguments is String
+      ? currentRouteArguments as String
+      : null;
+
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _routes.add(route);
+    _changes.add(null);
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _routes.remove(route);
+    _changes.add(null);
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
     _routes.remove(route);
+    _changes.add(null);
   }
 
   @override
@@ -74,15 +88,18 @@ class AppNavigationObserver extends NavigatorObserver
       final index = _routes.indexOf(oldRoute);
       if (index >= 0) {
         _routes[index] = newRoute!;
+        _changes.add(null);
         return;
       }
     }
     if (newRoute != null) _routes.add(newRoute);
+    _changes.add(null);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _lifecycleState = state;
+    _changes.add(null);
   }
 }
 
@@ -96,28 +113,32 @@ class LocalNotificationService {
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
   bool _initialized = false;
+  bool _backgroundMode = false;
   String? _initialPayload;
 
   String? get initialPayload => _initialPayload;
 
   /// Inicializa Android y devuelve si la app se abrió desde una notificación.
-  Future<bool> initialize() async {
+  Future<bool> initialize({bool background = false}) async {
     if (!Platform.isAndroid) return false;
+    _backgroundMode = background;
 
     await _plugin.initialize(
       settings: const InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       ),
-      onDidReceiveNotificationResponse: (response) {
-        final payload = response.payload;
-        if (payload == 'all') {
-          openBroadcast();
-        } else if (payload != null && payload.isNotEmpty) {
-          openChat(payload);
-        } else {
-          openChat();
-        }
-      },
+      onDidReceiveNotificationResponse: background
+          ? null
+          : (response) {
+              final payload = response.payload;
+              if (payload == 'all') {
+                openBroadcast();
+              } else if (payload != null && payload.isNotEmpty) {
+                openChat(payload);
+              } else {
+                openChat();
+              }
+            },
     );
 
     final androidImplementation = _plugin
@@ -159,7 +180,9 @@ class LocalNotificationService {
 
   /// Publica un aviso si la app no está mostrando la conversación activa.
   Future<void> showIncomingMessage(String senderNodeId) async {
-    if (!_initialized || appNavigationObserver.isChatVisibleFor(senderNodeId)) {
+    if (!_initialized ||
+        (!_backgroundMode &&
+            appNavigationObserver.isChatVisibleFor(senderNodeId))) {
       return;
     }
 
@@ -183,7 +206,10 @@ class LocalNotificationService {
 
   /// Publica una alerta de emergencia SOS.
   Future<void> showSosAlert(String fromNodeId, String text) async {
-    if (!_initialized || appNavigationObserver.isBroadcastVisible) return;
+    if (!_initialized ||
+        (!_backgroundMode && appNavigationObserver.isBroadcastVisible)) {
+      return;
+    }
 
     final displayName = await _contactDisplayName(fromNodeId);
     await _plugin.show(

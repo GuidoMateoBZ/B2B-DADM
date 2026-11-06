@@ -6,10 +6,10 @@ enum RadioState {
   on;
 
   static RadioState parse(Object? value) => switch (value) {
-        'on' || true => RadioState.on,
-        'transitioning' => RadioState.transitioning,
-        _ => RadioState.off,
-      };
+    'on' || true => RadioState.on,
+    'transitioning' => RadioState.transitioning,
+    _ => RadioState.off,
+  };
 }
 
 /// Snapshot del estado de los medios que usa Nearby Connections.
@@ -27,11 +27,18 @@ class MediaState {
   });
 
   factory MediaState.fromMap(Map<dynamic, dynamic> map) => MediaState(
-        bluetooth: RadioState.parse(map['bluetooth']),
-        wifi: RadioState.parse(map['wifi']),
-        location: map['location'] == true,
-        airplane: map['airplane'] == true,
-      );
+    bluetooth: RadioState.parse(map['bluetooth']),
+    wifi: RadioState.parse(map['wifi']),
+    location: map['location'] == true,
+    airplane: map['airplane'] == true,
+  );
+
+  Map<String, Object> toMap() => {
+    'bluetooth': bluetooth.name,
+    'wifi': wifi.name,
+    'location': location,
+    'airplane': airplane,
+  };
 
   bool get bluetoothOn => bluetooth == RadioState.on;
   bool get wifiOn => wifi == RadioState.on;

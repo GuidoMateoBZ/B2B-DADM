@@ -84,7 +84,8 @@ class NearbyService {
       );
       debugPrint('[NearbyService] startAdvertising retorno: $success');
       if (!success && lastError == null) {
-        lastError = 'Google Play Services rechazó startAdvertising (retornó false).';
+        lastError =
+            'Google Play Services rechazó startAdvertising (retornó false).';
       }
       return success;
     } catch (e, stack) {
@@ -124,9 +125,10 @@ class NearbyService {
       final success = await _nearby.startDiscovery(
         userName,
         strategy,
-        onEndpointFound: (String endpointId, String userName, String serviceId) {
-          onEndpointFound?.call(endpointId, userName);
-        },
+        onEndpointFound:
+            (String endpointId, String userName, String serviceId) {
+              onEndpointFound?.call(endpointId, userName);
+            },
         onEndpointLost: (String? endpointId) {
           if (endpointId != null) {
             onEndpointLost?.call(endpointId);
@@ -136,7 +138,8 @@ class NearbyService {
       );
       debugPrint('[NearbyService] startDiscovery retorno: $success');
       if (!success) {
-        final msg = 'Google Play Services rechazó startDiscovery (retornó false).';
+        final msg =
+            'Google Play Services rechazó startDiscovery (retornó false).';
         lastError = (lastError != null) ? '$lastError | $msg' : msg;
       }
       return success;
@@ -185,7 +188,9 @@ class NearbyService {
         onConnectionResult: _handleConnectionResult,
         onDisconnected: _handleDisconnected,
       );
-      return ok ? ConnectionRequestResult.requested : ConnectionRequestResult.failed;
+      return ok
+          ? ConnectionRequestResult.requested
+          : ConnectionRequestResult.failed;
     } catch (e) {
       final code = parseStatusCode(e);
       lastErrorCode = code;
@@ -286,9 +291,9 @@ class NearbyService {
       }
     }
 
-    await attempt('stopAllEndpoints', _nearby.stopAllEndpoints);
     await attempt('stopAdvertising', _nearby.stopAdvertising);
     await attempt('stopDiscovery', _nearby.stopDiscovery);
+    await attempt('stopAllEndpoints', _nearby.stopAllEndpoints);
 
     if (failures.isNotEmpty) throw NearbyStopException(failures);
   }

@@ -2,12 +2,16 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:nearby_connections/nearby_connections.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../data/discovered_endpoint.dart';
+import '../data/message_storage.dart';
 import '../data/models/chat_message.dart';
 import '../data/models/envelope.dart';
 import '../data/models/media_state.dart';
 import '../data/nearby_service.dart';
+import '../data/node_id_storage.dart';
+import '../services/background_mesh_service.dart';
 import '../services/local_notification_service.dart';
 import '../services/media_state_service.dart';
 import '../services/mesh_recovery_policy.dart';
@@ -38,6 +42,9 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   final NearbyService _service = NearbyService();
   final MediaStateService _mediaService;
   final MeshRecoveryPolicy _policy = MeshRecoveryPolicy();
+  final bool _isBackgroundController;
+  late final BackgroundMeshService _backgroundService =
+      BackgroundMeshService.instance;
 
   // ── Estado observable ──
 
@@ -47,7 +54,10 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// El usuario pidió conectar: la máquina de estados no está en `idle`.
   /// El ciclo de vida de la red (en marcha, sin discovery, pausada) lo lleva
   /// `MeshRecoveryPolicy`.
-  bool get isSearching => _policy.state != MeshState.idle;
+  bool _remoteIsSearching = false;
+  bool get isSearching => _isBackgroundController
+      ? _policy.state != MeshState.idle
+      : _remoteIsSearching;
 
   final List<DiscoveredEndpoint> _discoveredEndpoints = [];
   List<DiscoveredEndpoint> get discoveredEndpoints =>
@@ -70,12 +80,20 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   final Map<String, Timer> _connectTimers = {};
 
   StreamSubscription<MediaState>? _mediaSub;
+  StreamSubscription<Map<String, dynamic>?>? _snapshotSub;
+  StreamSubscription<Map<String, dynamic>?>? _messageSub;
+  StreamSubscription<void>? _navigationSub;
   Timer? _mediaDebounce;
   Timer? _safetyTimer;
   Timer? _rediscoveryDebounce;
+  final Set<String> _pendingStopEndpoints = {};
+  Completer<void>? _stopDisconnectionsCompleter;
+  bool _isStoppingMesh = false;
 
   /// Serializa las operaciones que tocan Nearby (inicio, pausas, reinicios).
   Future<void> _opChain = Future.value();
+  static const Duration _stopDisconnectionTimeout = Duration(seconds: 5);
+  static const Duration _stopDrainPeriod = Duration(seconds: 2);
 
   String? _errorMessage;
   String? get errorMessage => _errorMessage;
@@ -85,19 +103,153 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   late MessageRelay _relay;
   ChatProvider? _chatProvider;
+  void Function(String, [Map<String, dynamic>?])? _serviceEmitter;
+  bool _uiForeground = false;
+  String? _visibleChatNodeId;
+  bool _broadcastVisible = false;
 
   // ── Constructor ──
 
   NearbyProvider({MediaStateService? mediaService})
-      : _mediaService = mediaService ?? MediaStateService() {
+    : _isBackgroundController = false,
+      _mediaService = mediaService ?? MediaStateService() {
     _relay = MessageRelay(myNodeId: '');
-    _setupCallbacks();
     WidgetsBinding.instance.addObserver(this);
+    _snapshotSub = _backgroundService
+        .on('mesh_snapshot')
+        .listen(_applyServiceSnapshot);
+    _messageSub = _backgroundService.on('messages_changed').listen((_) {
+      unawaited(_chatProvider?.refreshFromStorage());
+    });
     _mediaSub = _mediaService.stream.listen(
-      _onMediaChanged,
+      (media) => _backgroundService.invoke('media_state', media.toMap()),
       onError: (Object e) =>
           debugPrint('[NearbyProvider] Error en observer de medios: $e'),
     );
+    _navigationSub = appNavigationObserver.changes.listen((_) {
+      _publishUiPresence();
+    });
+    _publishUiPresence();
+    unawaited(_requestExistingServiceState());
+  }
+
+  NearbyProvider.backgroundController()
+    : _isBackgroundController = true,
+      _mediaService = MediaStateService() {
+    _relay = MessageRelay(myNodeId: '');
+    _setupCallbacks();
+  }
+
+  Future<void> initializeBackgroundController() async {
+    await localNotificationService.initialize(background: true);
+    final preferences = await SharedPreferences.getInstance();
+    if (preferences.getBool(_activeSessionKey) != true) return;
+
+    final nodeId = await NodeIdStorage().getId();
+    final action = _policy.connect();
+    _myNodeId = nodeId;
+    _relay = MessageRelay(myNodeId: nodeId);
+    await _execute(action);
+  }
+
+  Future<void> _requestExistingServiceState() async {
+    if (await _backgroundService.isRunning()) {
+      _backgroundService.invoke('request_snapshot');
+    }
+  }
+
+  static const String _activeSessionKey = 'mesh_session_active';
+
+  void setServiceEmitter(void Function(String, [Map<String, dynamic>?]) emit) {
+    _serviceEmitter = emit;
+  }
+
+  void _log(String message) {
+    debugPrint(
+      '[NearbyProvider][${_isBackgroundController ? 'background' : 'ui'}] '
+      '$message',
+    );
+  }
+
+  void emitServiceSnapshot() {
+    _serviceEmitter?.call('mesh_snapshot', {
+      'state': _state.name,
+      'searching': isSearching,
+      'myNodeId': _myNodeId,
+      'errorMessage': _errorMessage,
+      'discovered': [
+        for (final endpoint in _discoveredEndpoints)
+          {'endpointId': endpoint.endpointId, 'userName': endpoint.userName},
+      ],
+      'connected': Map<String, String>.from(_connectedEndpoints),
+      'connecting': _connectingEndpoints.toList(),
+    });
+  }
+
+  void _applyServiceSnapshot(Map<String, dynamic>? snapshot) {
+    if (_isBackgroundController || snapshot == null) return;
+    final previousState = _state;
+    final stateName = snapshot['state'] as String?;
+    if (stateName != null) {
+      _state = NearbyState.values.firstWhere(
+        (state) => state.name == stateName,
+        orElse: () => NearbyState.error,
+      );
+    }
+    _remoteIsSearching = snapshot['searching'] as bool? ?? false;
+    _myNodeId = snapshot['myNodeId'] as String?;
+    _errorMessage = snapshot['errorMessage'] as String?;
+    _discoveredEndpoints
+      ..clear()
+      ..addAll(
+        (snapshot['discovered'] as List<dynamic>? ?? []).map((entry) {
+          final map = entry as Map<dynamic, dynamic>;
+          return DiscoveredEndpoint(
+            endpointId: map['endpointId'] as String,
+            userName: map['userName'] as String,
+          );
+        }),
+      );
+    _connectedEndpoints
+      ..clear()
+      ..addAll(
+        (snapshot['connected'] as Map<dynamic, dynamic>? ?? {}).map(
+          (key, value) => MapEntry(key as String, value as String),
+        ),
+      );
+    _connectingEndpoints
+      ..clear()
+      ..addAll((snapshot['connecting'] as List<dynamic>? ?? []).cast<String>());
+    if (_state != previousState) {
+      _log(
+        'Estado actualizado desde el servicio: $previousState -> $_state; '
+        'descubiertos=${_discoveredEndpoints.length}, '
+        'conectados=${_connectedEndpoints.length}, '
+        'conectando=${_connectingEndpoints.length}',
+      );
+    }
+    notifyListeners();
+  }
+
+  void _publishUiPresence() {
+    if (_isBackgroundController) return;
+    _backgroundService.invoke('ui_state', _uiPresence());
+  }
+
+  Map<String, dynamic> _uiPresence() {
+    final observer = appNavigationObserver;
+    return {
+      'foreground': observer.isForeground,
+      'chatNodeId': observer.visibleChatNodeId,
+      'broadcastVisible': observer.isBroadcastVisible,
+    };
+  }
+
+  void updateUiPresence(Map<String, dynamic> presence) {
+    if (!_isBackgroundController) return;
+    _uiForeground = presence['foreground'] as bool? ?? false;
+    _visibleChatNodeId = presence['chatNodeId'] as String?;
+    _broadcastVisible = presence['broadcastVisible'] as bool? ?? false;
   }
 
   /// Inyecta o actualiza la referencia a ChatProvider.
@@ -132,26 +284,66 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Inicia búsqueda continua (advertising + discovery).
   Future<void> startSearching(String nodeId) async {
-    _myNodeId = nodeId;
-
-    // Pedir permisos en runtime
+    _log('Solicitud de conexión a la mesh');
     final permissionResult =
         await PermissionService.requestPermissionsDetailed();
     if (!permissionResult.isGranted) {
+      _log('Conexión cancelada: ${permissionResult.missingMessage}');
       _state = NearbyState.error;
       _errorMessage = permissionResult.missingMessage;
       notifyListeners();
       return;
     }
 
+    final media = await _mediaService.current();
+    final ready = await _backgroundService.ensureRunning();
+    if (!ready) {
+      _log('Conexión cancelada: servicio de fondo no confirmó inicio');
+      _state = NearbyState.error;
+      _errorMessage = 'No se pudo iniciar el servicio de red en segundo plano.';
+      notifyListeners();
+      return;
+    }
+
+    _myNodeId = nodeId;
+    _backgroundService.invoke('start_search', {
+      'nodeId': nodeId,
+      'media': media?.toMap(),
+      'uiState': _uiPresence(),
+    });
+    _log(
+      'Comando start_search enviado; medios=${media == null ? 'no disponibles' : 'capturados'}',
+    );
+  }
+
+  Future<void> startSearchingInBackground(
+    String nodeId,
+    Map<dynamic, dynamic>? initialMedia, [
+    Map<dynamic, dynamic>? initialUiState,
+  ]) async {
+    if (!_isBackgroundController) return;
+    _log('Procesando start_search');
+    if (initialUiState != null) {
+      updateUiPresence(Map<String, dynamic>.from(initialUiState));
+    }
+    if (_myNodeId == nodeId && _policy.state != MeshState.idle) {
+      _log('start_search ignorado: sesión ya activa');
+      emitServiceSnapshot();
+      return;
+    }
+    _isStoppingMesh = false;
     _relay = MessageRelay(myNodeId: nodeId);
     _policy.clearBlocks();
     _errorMessage = null;
     _discoveredEndpoints.clear();
-
-    final media = await _mediaService.current();
-    if (media != null) _policy.onMediaEvent(media);
-
+    _myNodeId = nodeId;
+    await (await SharedPreferences.getInstance()).setBool(
+      _activeSessionKey,
+      true,
+    );
+    if (initialMedia != null) {
+      _policy.onMediaEvent(MediaState.fromMap(initialMedia));
+    }
     await _enqueue(() => _execute(_policy.connect()));
   }
 
@@ -162,20 +354,24 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     final nodeId = _myNodeId;
     if (nodeId == null) return;
 
+    _log('Iniciando advertising y discovery=${_policy.discoveryActive}');
     _errorMessage = null;
     _updateCurrentState();
     notifyListeners();
 
     final advResult = await _service.startAdvertising(nodeId);
-    final disResult =
-        _policy.discoveryActive ? await _service.startDiscovery(nodeId) : true;
+    final disResult = _policy.discoveryActive
+        ? await _service.startDiscovery(nodeId)
+        : true;
 
     if (!advResult && !disResult) {
       _policy.onStartFailed();
       _cancelSafetyTimer();
       _state = NearbyState.error;
-      _errorMessage = _service.lastError ??
-          'No se pudo conectar a la red. Verificá que el Bluetooth y la ubicación estén encendidos.';
+      _errorMessage = _service.lastError ?? 'No se pudo conectar a la red. Verificá que el Bluetooth y la ubicación estén encendidos.';
+      _log(
+        'Inicio fallido: adv=$advResult, discovery=$disResult; $_errorMessage',
+      );
       notifyListeners();
       return;
     }
@@ -187,6 +383,10 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     _startSafetyTimer();
     _updateCurrentState();
+    _log(
+      'Inicio finalizado: adv=$advResult, discovery=$disResult, estado=$_state'
+      '${_service.lastError == null ? '' : ', detalle=${_service.lastError}'}',
+    );
     notifyListeners();
   }
 
@@ -200,29 +400,38 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   }) async {
     if (_myNodeId == null || _connectingEndpoints.contains(endpointId)) return;
 
+    _log('Solicitando conexión con endpoint=$endpointId');
     _connectingEndpoints.add(endpointId);
     _state = NearbyState.connecting;
     notifyListeners();
 
     var result = await _service.requestConnection(_myNodeId!, endpointId);
+    _log('Resultado de solicitud a $endpointId: $result');
     final nodeId = _endpointNames[endpointId];
-    final nodeAlreadyLinked = nodeId != null &&
-        _connectedEndpoints.entries
-            .any((e) => e.value == nodeId && e.key != endpointId);
+    final nodeAlreadyLinked =
+        nodeId != null &&
+        _connectedEndpoints.entries.any(
+          (e) => e.value == nodeId && e.key != endpointId,
+        );
     if (result == ConnectionRequestResult.alreadyConnected &&
         !_connectedEndpoints.containsKey(endpointId) &&
         !nodeAlreadyLinked) {
       // 8003 sobre un endpoint que la app no tiene conectado: Nearby dejó el
       // enlace colgado tras un cambio de medio. Se libera y se reintenta una vez.
       // Si el mismo nodo ya está enlazado con otro endpointId, el 8003 es correcto.
-      debugPrint('[NearbyProvider] 8003 con $endpointId sin enlace en la app: liberando y reintentando');
+      debugPrint(
+        '[NearbyProvider] 8003 con $endpointId sin enlace en la app: liberando y reintentando',
+      );
       await _service.disconnectFromEndpoint(endpointId);
       await Future<void>.delayed(NearbyService.restartPause);
       result = await _service.requestConnection(_myNodeId!, endpointId);
+      _log('Resultado del reintento a $endpointId: $result');
     }
     if (result != ConnectionRequestResult.requested) {
-      debugPrint('[NearbyProvider] requestConnection a $endpointId: $result '
-          '(código ${_service.lastErrorCode}, ${_service.lastError})');
+      debugPrint(
+        '[NearbyProvider] requestConnection a $endpointId: $result '
+        '(código ${_service.lastErrorCode}, ${_service.lastError})',
+      );
       _connectingEndpoints.remove(endpointId);
       if (rediscoverOnFailure && result == ConnectionRequestResult.failed) {
         _scheduleRediscovery();
@@ -233,21 +442,86 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Detiene todas las conexiones, advertising y discovery.
-  Future<void> stopSearching() => _enqueue(() async {
-        _policy.disconnect();
-        _mediaDebounce?.cancel();
-        _cancelSafetyTimer();
-        await _safeStopAll();
-        _clearNeighbors();
-        _relay.clearSeenMessages();
-        _state = NearbyState.idle;
-        _errorMessage = null;
-        notifyListeners();
-      });
+  Future<void> stopSearching() async {
+    if (!_isBackgroundController) {
+      _backgroundService.invoke('stop_search');
+      _remoteIsSearching = false;
+      _state = NearbyState.idle;
+      _connectedEndpoints.clear();
+      _discoveredEndpoints.clear();
+      _connectingEndpoints.clear();
+      _errorMessage = null;
+      notifyListeners();
+      return;
+    }
+    await stopSearchingInBackground();
+  }
+
+  Future<bool> stopSearchingInBackground() async {
+    if (!_isBackgroundController) return false;
+    _isStoppingMesh = true;
+    await (await SharedPreferences.getInstance()).setBool(
+      _activeSessionKey,
+      false,
+    );
+    _pendingStopEndpoints
+      ..clear()
+      ..addAll(_connectedEndpoints.keys);
+    _stopDisconnectionsCompleter = _pendingStopEndpoints.isEmpty
+        ? null
+        : Completer<void>();
+    var stopped = false;
+    await _enqueue(() async {
+      _policy.disconnect();
+      _mediaDebounce?.cancel();
+      _cancelSafetyTimer();
+      stopped = await _safeStopAll();
+      if (stopped && _stopDisconnectionsCompleter != null) {
+        try {
+          await _stopDisconnectionsCompleter!.future.timeout(
+            _stopDisconnectionTimeout,
+          );
+        } on TimeoutException {
+          stopped = false;
+          _log(
+            'No llegaron las desconexiones de '
+            '${_pendingStopEndpoints.join(', ')} en '
+            '${_stopDisconnectionTimeout.inSeconds} s',
+          );
+        }
+      }
+      if (stopped) {
+        _log(
+          'Esperando ${_stopDrainPeriod.inMilliseconds} ms para callbacks nativos tardíos',
+        );
+        await Future<void>.delayed(_stopDrainPeriod);
+      }
+      _pendingStopEndpoints.clear();
+      _stopDisconnectionsCompleter = null;
+      _clearNeighbors();
+      _relay.clearSeenMessages();
+      _errorMessage = stopped
+          ? null
+          : 'No se pudo confirmar el cierre de la red Nearby.';
+      _state = stopped ? NearbyState.idle : NearbyState.error;
+      notifyListeners();
+    });
+    return stopped;
+  }
 
   /// Desconecta de un endpoint específico.
   /// TEMPORAL: además bloquea al nodo para que ninguno de los dos lo reconecte.
   Future<void> disconnectEndpoint(String endpointId) async {
+    if (!_isBackgroundController) {
+      _backgroundService.invoke('disconnect_endpoint', {
+        'endpointId': endpointId,
+      });
+      return;
+    }
+    await disconnectEndpointInBackground(endpointId);
+  }
+
+  Future<void> disconnectEndpointInBackground(String endpointId) async {
     final nodeId = _connectedEndpoints[endpointId];
     if (nodeId != null) _policy.blockNode(nodeId);
     await _service.disconnectFromEndpoint(endpointId);
@@ -268,22 +542,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       ttl: Envelope.defaultTtl,
     );
 
-    // 1. Guardar localmente
-    final chatMsg = ChatMessage.fromEnvelope(envelope, isMine: true);
-    await _chatProvider?.addMessage(chatMsg);
-
-    // 2. Obtener destinos del relay
-    final targets = _relay.getTargetEndpoints(envelope);
-    if (targets.isNotEmpty) {
-      debugPrint(
-        '[NearbyProvider] Enviando mensaje ${envelope.messageId} a endpoints: $targets',
-      );
-      await _service.sendToEndpoints(targets, envelope.encode());
-    } else {
-      debugPrint(
-        '[NearbyProvider] No hay vecinos conectados para rutear mensaje a $targetNodeId',
-      );
-    }
+    await _sendEnvelope(envelope);
   }
 
   /// Envía un broadcast SOS a todos los vecinos conectados para propagación epidémica.
@@ -297,23 +556,44 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       ttl: Envelope.defaultTtl,
     );
 
-    // 1. Guardar localmente
-    final chatMsg = ChatMessage.fromEnvelope(envelope, isMine: true);
-    await _chatProvider?.addMessage(chatMsg);
+    await _sendEnvelope(envelope);
+  }
 
-    // 2. Enviar a todos los vecinos conectados
+  Future<void> _sendEnvelope(Envelope envelope) async {
+    if (!_isBackgroundController) {
+      final chatMsg = ChatMessage.fromEnvelope(envelope, isMine: true);
+      await _chatProvider?.addMessage(chatMsg);
+      _backgroundService.invoke('send_envelope', {
+        'envelope': envelope.encode(),
+      });
+      return;
+    }
+    await sendEnvelopeInBackground(envelope.encode());
+  }
+
+  Future<void> sendEnvelopeInBackground(String encodedEnvelope) async {
+    if (!_isBackgroundController) return;
+    final envelope = Envelope.decode(encodedEnvelope);
     final targets = _relay.getTargetEndpoints(envelope);
     if (targets.isNotEmpty) {
       debugPrint(
-        '[NearbyProvider] Enviando SOS ${envelope.messageId} a endpoints: $targets',
+        '[NearbyProvider] Enviando ${envelope.messageId} a endpoints: $targets',
       );
       await _service.sendToEndpoints(targets, envelope.encode());
+    } else {
+      debugPrint(
+        '[NearbyProvider] No hay vecinos conectados para rutear ${envelope.messageId}',
+      );
     }
   }
 
   // ── Callbacks de NearbyService ──
 
   void _onEndpointFound(String endpointId, String userName) {
+    if (_isStoppingMesh) {
+      _log('Ignorando endpoint=$endpointId: la red está cerrándose');
+      return;
+    }
     debugPrint('[NearbyProvider] onEndpointFound $endpointId ($userName)');
     _policy.onEndpointFound();
     _endpointNames[endpointId] = userName;
@@ -323,8 +603,9 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Registra al par como visto y no conectado (lo usan el descubrimiento y las caídas).
   void _rememberDiscovered(String endpointId, String nodeId) {
-    final alreadyExists =
-        _discoveredEndpoints.any((e) => e.endpointId == endpointId);
+    final alreadyExists = _discoveredEndpoints.any(
+      (e) => e.endpointId == endpointId,
+    );
     if (!alreadyExists && !_connectedEndpoints.containsKey(endpointId)) {
       _discoveredEndpoints.add(
         DiscoveredEndpoint(endpointId: endpointId, userName: nodeId),
@@ -350,12 +631,16 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       return;
     }
     if (_policy.isBlocked(nodeId)) {
-      debugPrint('[NearbyProvider] $nodeId bloqueado (desconexión manual): no se conecta');
+      debugPrint(
+        '[NearbyProvider] $nodeId bloqueado (desconexión manual): no se conecta',
+      );
       return;
     }
     if (afterDisconnect) {
       final delay = MeshRecoveryPolicy.reconnectDelay(myNodeId, nodeId);
-      debugPrint('[NearbyProvider] Reconexión a $endpointId ($nodeId) programada en ${delay.inSeconds} s');
+      debugPrint(
+        '[NearbyProvider] Reconexión a $endpointId ($nodeId) programada en ${delay.inSeconds} s',
+      );
       _scheduleConnectAttempt(endpointId, delay, afterDisconnect: true);
     } else if (MeshRecoveryPolicy.isPrimaryInitiator(myNodeId, nodeId)) {
       connectTo(endpointId);
@@ -378,15 +663,20 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     _connectTimers[endpointId] = Timer(delay, () {
       _connectTimers.remove(endpointId);
       final nodeId = _endpointNames[endpointId];
-      final stillVisible =
-          _discoveredEndpoints.any((e) => e.endpointId == endpointId);
+      final stillVisible = _discoveredEndpoints.any(
+        (e) => e.endpointId == endpointId,
+      );
       if (!stillVisible) {
-        debugPrint('[NearbyProvider] Conexión a $endpointId cancelada: ya no está visible');
+        debugPrint(
+          '[NearbyProvider] Conexión a $endpointId cancelada: ya no está visible',
+        );
       } else if (_policy.isRunning &&
           !_connectedEndpoints.containsKey(endpointId) &&
           !_connectingEndpoints.contains(endpointId) &&
           !(nodeId != null && _policy.isBlocked(nodeId))) {
-        debugPrint('[NearbyProvider] Conectando a $endpointId (${afterDisconnect ? 'reconexión' : 'fallback del iniciador'})');
+        debugPrint(
+          '[NearbyProvider] Conectando a $endpointId (${afterDisconnect ? 'reconexión' : 'fallback del iniciador'})',
+        );
         connectTo(endpointId, rediscoverOnFailure: afterDisconnect);
       }
     });
@@ -407,23 +697,56 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
     _connectTimers.remove(endpointId)?.cancel();
+    _log(
+      'Handshake iniciado con endpoint=$endpointId, '
+      'nombreRemoto=${info.endpointName.isEmpty ? 'no informado' : info.endpointName}',
+    );
+    if (_isStoppingMesh) {
+      _log('Rechazando handshake de $endpointId: la red está cerrándose');
+      unawaited(_service.rejectConnection(endpointId));
+      return;
+    }
     if (info.endpointName.isNotEmpty && info.endpointName != '-1') {
       _endpointNames[endpointId] = info.endpointName;
     }
     final nodeId = _endpointNames[endpointId];
     if (nodeId != null && _policy.isBlocked(nodeId)) {
-      debugPrint('[NearbyProvider] Conexión rechazada: nodo bloqueado ($nodeId)');
+      debugPrint(
+        '[NearbyProvider] Conexión rechazada: nodo bloqueado ($nodeId)',
+      );
       unawaited(_service.rejectConnection(endpointId));
       return;
     }
     // Aceptar conexiones entrantes automáticamente
-    _service.acceptConnection(endpointId);
+    unawaited(_acceptConnection(endpointId));
+  }
+
+  Future<void> _acceptConnection(String endpointId) async {
+    final accepted = await _service.acceptConnection(endpointId);
+    _log(
+      'Aceptación enviada para endpoint=$endpointId: accepted=$accepted'
+      '${_service.lastError == null ? '' : ', detalle=${_service.lastError}'}',
+    );
   }
 
   void _onConnectionResult(String endpointId, Status status) {
     debugPrint('[NearbyProvider] onConnectionResult $endpointId: $status');
     _connectingEndpoints.remove(endpointId);
     _connectTimers.remove(endpointId)?.cancel();
+
+    if (_isStoppingMesh) {
+      _log(
+        'Resultado de conexión ignorado para $endpointId: la red se está cerrando',
+      );
+      if (status == Status.CONNECTED) {
+        unawaited(_service.disconnectFromEndpoint(endpointId));
+      }
+      _endpointNames.remove(endpointId);
+      _discoveredEndpoints.removeWhere((e) => e.endpointId == endpointId);
+      _updateCurrentState();
+      notifyListeners();
+      return;
+    }
 
     if (status == Status.CONNECTED) {
       final discovered = _discoveredEndpoints
@@ -459,7 +782,17 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onDisconnected(String endpointId, {bool manual = false}) {
-    debugPrint('[NearbyProvider] onDisconnected $endpointId${manual ? ' (manual)' : ''}');
+    debugPrint(
+      '[NearbyProvider] onDisconnected $endpointId${manual ? ' (manual)' : ''}',
+    );
+    if (_pendingStopEndpoints.remove(endpointId)) {
+      _log(
+        'Callback de desconexión recibido; pendientes=${_pendingStopEndpoints.length}',
+      );
+      if (_pendingStopEndpoints.isEmpty) {
+        _stopDisconnectionsCompleter?.complete();
+      }
+    }
     final nodeId = _connectedEndpoints[endpointId];
     _connectedEndpoints.remove(endpointId);
     _relay.removeNeighbor(endpointId);
@@ -492,7 +825,9 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> _rediscover() async {
     final nodeId = _myNodeId;
     if (!_policy.discoveryActive || nodeId == null) return;
-    debugPrint('[NearbyProvider] Desconexión involuntaria: reiniciando discovery');
+    debugPrint(
+      '[NearbyProvider] Desconexión involuntaria: reiniciando discovery',
+    );
     await _service.restartDiscovery(nodeId);
   }
 
@@ -502,21 +837,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       final result = _relay.processIncoming(endpointId, envelope);
 
       if (result.action == RelayAction.deliver) {
-        final chatMsg = ChatMessage.fromEnvelope(envelope, isMine: false);
-        _chatProvider?.addMessage(chatMsg);
-
-        if (envelope.isBroadcast) {
-          unawaited(
-            localNotificationService.showSosAlert(
-              envelope.fromNodeId,
-              envelope.text,
-            ),
-          );
-        } else {
-          unawaited(
-            localNotificationService.showIncomingMessage(envelope.fromNodeId),
-          );
-        }
+        unawaited(_persistIncomingMessage(envelope));
       }
 
       // Reenviar si corresponde (multi-hop o broadcast)
@@ -529,6 +850,39 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e, stack) {
       debugPrint(
         '[NearbyProvider] Error procesando mensaje de $endpointId: $e\n$stack',
+      );
+    }
+  }
+
+  Future<void> _persistIncomingMessage(Envelope envelope) async {
+    final message = ChatMessage.fromEnvelope(envelope, isMine: false);
+    try {
+      if (_isBackgroundController) {
+        final inserted = await MessageStorage.insert(message);
+        if (!inserted) return;
+        _serviceEmitter?.call('messages_changed', {'messageId': message.id});
+      } else {
+        await _chatProvider?.addMessage(message);
+      }
+
+      final shouldNotify =
+          !_uiForeground ||
+          (envelope.isBroadcast
+              ? !_broadcastVisible
+              : _visibleChatNodeId != envelope.fromNodeId);
+      if (!shouldNotify) return;
+      if (envelope.isBroadcast) {
+        await localNotificationService.showSosAlert(
+          envelope.fromNodeId,
+          envelope.text,
+        );
+      } else {
+        await localNotificationService.showIncomingMessage(envelope.fromNodeId);
+      }
+    } catch (error, stackTrace) {
+      debugPrint(
+        '[NearbyProvider] No se pudo persistir el mensaje entrante: '
+        '$error\n$stackTrace',
       );
     }
   }
@@ -560,6 +914,16 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onMediaChanged(MediaState media) {
+    if (!_isBackgroundController) {
+      _backgroundService.invoke('media_state', media.toMap());
+      return;
+    }
+    applyMediaStateInBackground(media.toMap());
+  }
+
+  void applyMediaStateInBackground(Map<dynamic, dynamic> mediaState) {
+    if (!_isBackgroundController) return;
+    final media = MediaState.fromMap(mediaState);
     debugPrint('[NearbyProvider] Medios: $media');
     _policy.onMediaEvent(media);
     _mediaDebounce?.cancel();
@@ -652,11 +1016,14 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     await _service.restartDiscovery(nodeId);
   }
 
-  Future<void> _safeStopAll() async {
+  Future<bool> _safeStopAll() async {
     try {
       await _service.stopAll();
+      _log('Solicitudes para detener Nearby enviadas');
+      return true;
     } catch (e) {
-      debugPrint('[NearbyProvider] stopAll con errores: $e');
+      _log('No se confirmó stopAll: $e');
+      return false;
     }
   }
 
@@ -676,26 +1043,35 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    _publishUiPresence();
+    if (_isBackgroundController) return;
     if (state != AppLifecycleState.resumed || !isSearching) return;
     // Pasa por la misma espera de estabilidad que los eventos: al cambiar el
     // modo avión desde el panel rápido, la app vuelve a `resumed` en plena
     // transición de los medios y aplicar las reglas ahí reiniciaría demasiado pronto.
-    unawaited(_mediaService.current().then((media) {
-      if (media != null) _onMediaChanged(media);
-    }));
+    unawaited(
+      _mediaService.current().then((media) {
+        if (media != null) _onMediaChanged(media);
+      }),
+    );
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    if (!_isBackgroundController) {
+      WidgetsBinding.instance.removeObserver(this);
+    }
     _mediaSub?.cancel();
+    _snapshotSub?.cancel();
+    _messageSub?.cancel();
+    _navigationSub?.cancel();
     _mediaDebounce?.cancel();
     _rediscoveryDebounce?.cancel();
     _cancelSafetyTimer();
     for (final timer in _connectTimers.values) {
       timer.cancel();
     }
-    unawaited(_safeStopAll());
+    if (_isBackgroundController) unawaited(_safeStopAll());
     super.dispose();
   }
 }
