@@ -237,11 +237,20 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.more_vert),
+            // Debajo del botón y con el borde superior alineado con el borde
+            // inferior de la barra (el botón es 4 px más bajo que la barra).
+            position: PopupMenuPosition.under,
+            offset: const Offset(
+              0,
+              (kToolbarHeight - kMinInteractiveDimension) / 2,
+            ),
             onSelected: (val) {
               if (val == 'purge') {
                 _confirmPurgeOldMessages();
               } else if (val == 'neighbors') {
                 _showConnectedNeighbors(context, nearbyProvider);
+              } else if (val == 'theme') {
+                // Pendiente: alternar entre modo claro y oscuro.
               }
             },
             itemBuilder: (_) => [
@@ -262,6 +271,25 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Icon(Icons.cleaning_services, size: 20),
                     const SizedBox(width: 8),
                     const Text('Purgar mensajes antiguos'),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'theme',
+                child: Row(
+                  children: [
+                    Icon(
+                      theme.brightness == Brightness.dark
+                          ? Icons.light_mode_outlined
+                          : Icons.dark_mode_outlined,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      theme.brightness == Brightness.dark
+                          ? 'Cambiar a modo claro'
+                          : 'Cambiar a modo oscuro',
+                    ),
                   ],
                 ),
               ),
