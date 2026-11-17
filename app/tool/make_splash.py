@@ -2,7 +2,10 @@
 
 Uso (desde app/):
     python3 tool/make_splash.py assets/icon/B2B_logo_transparent.png \
-        assets/icon/B2B_splash.png <carpeta_de_vistas_previas>
+        assets/icon/B2B_splash.png <carpeta_de_vistas_previas> [estilo]
+
+estilo: "tenue" (por defecto, texto plano apenas más claro que el fondo),
+"medio" (un poco más de contraste) o "tallado".
     dart run flutter_native_splash:create
 
 Requiere Pillow y la tipografía Montserrat (Black y Bold); las rutas de
@@ -12,6 +15,12 @@ import sys
 from PIL import Image, ImageDraw, ImageFont, ImageChops, ImageFilter
 
 LOGO, OUT, PREV = sys.argv[1], sys.argv[2], sys.argv[3]
+STYLE = sys.argv[4] if len(sys.argv) > 4 else 'tenue'
+# Color de "B2B" y de "MESH" para los estilos planos.
+FLAT = {
+    'tenue': ((58, 48, 92), (88, 66, 140)),
+    'medio': ((84, 72, 124), (118, 86, 186)),
+}
 BG = (23, 18, 40)                 # #171228
 CANVAS, CIRCLE = 1152, 768        # Android 12: lienzo 288 dp, círculo visible 192 dp
 BLACK = '/usr/share/fonts/julietaula-montserrat-fonts/Montserrat-Black.otf'
@@ -31,6 +40,12 @@ def text_mask(text, font_path, size, tracking=0):
         d.text((x, size // 5), c, font=font, fill=255)
         x += a + tracking
     return m.crop(m.getbbox())
+
+
+def flat(mask, color):
+    layer = Image.new('RGBA', mask.size, (0, 0, 0, 0))
+    layer.paste(color + (255,), (0, 0), mask)
+    return layer
 
 
 def engrave(mask, fill, depth):
@@ -69,7 +84,13 @@ mesh = mesh.resize((mesh_w, round(mesh.height * mesh_w / mesh.width)), Image.LAN
 gap1, gap2 = 70 * S, 46 * S
 depth = 6 * S
 
-parts = [(glyph, None), (engrave(b2b, (16, 12, 29), depth), None), (engrave(mesh, (18, 13, 33), depth), None)]
+if STYLE == 'tallado':
+    b2b_layer = engrave(b2b, (16, 12, 29), depth)
+    mesh_layer = engrave(mesh, (18, 13, 33), depth)
+else:
+    b2b_color, mesh_color = FLAT[STYLE]
+    b2b_layer, mesh_layer = flat(b2b, b2b_color), flat(mesh, mesh_color)
+parts = [(glyph, None), (b2b_layer, None), (mesh_layer, None)]
 W = max(p.width for p, _ in parts)
 H = sum(p.height for p, _ in parts) + gap1 + gap2
 comp = Image.new('RGBA', (W, H), (0, 0, 0, 0))
