@@ -70,7 +70,8 @@ flutter_launcher_icons:
   android: true
 
 # Pantalla de presentación: fondo del logo y el glifo solo, sin el círculo
-# blanco que agrega el sistema al ícono de la app. Regenerar con
+# blanco que agrega el sistema al ícono de la app. La imagen (glifo + "B2B
+# MESH" tallado) sale de tool/make_splash.py; después regenerar con
 # `dart run flutter_native_splash:create`.
 flutter_native_splash:
   color: "#171228"
