@@ -125,7 +125,7 @@ class LocalNotificationService {
 
     await _plugin.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        android: AndroidInitializationSettings('ic_stat_b2b'),
       ),
       onDidReceiveNotificationResponse: background
           ? null
