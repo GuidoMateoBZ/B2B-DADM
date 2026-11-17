@@ -42,7 +42,9 @@ dependencies:
   nearby_connections:
     git:
       url: https://github.com/fiorellavaldez/nearby_connections
-      ref: fix/cierre-engine
+      # Commit de la rama fix/cierre-engine: fijado para que `pub upgrade`
+      # no traiga cambios del fork sin revisarlos.
+      ref: 5ee42d642276ff25d6a736f91849e375b07ab46e
   flutter_background_service: ^5.1.0
   permission_handler: ^11.0.0 # Solicitud de permisos en runtime
   device_info_plus: ^13.2.0

@@ -411,7 +411,7 @@ packages:
     dependency: "direct main"
     description:
       path: "."
-      ref: "fix/cierre-engine"
+      ref: "5ee42d642276ff25d6a736f91849e375b07ab46e"
       resolved-ref: "5ee42d642276ff25d6a736f91849e375b07ab46e"
       url: "https://github.com/fiorellavaldez/nearby_connections"
     source: git
