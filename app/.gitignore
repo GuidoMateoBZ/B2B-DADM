@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Paquetes locales: el lock lo maneja la app
+/packages/*/pubspec.lock
