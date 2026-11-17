@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,11 +11,15 @@ import 'providers/chat_provider.dart';
 import 'providers/contact_provider.dart';
 import 'providers/nearby_provider.dart';
 import 'providers/node_id_provider.dart';
+import 'services/background_mesh_service.dart';
 import 'services/local_notification_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final launchedFromNotification = await localNotificationService.initialize();
+  if (Platform.isAndroid) {
+    await BackgroundMeshService.instance.configure();
+  }
   runApp(const MyApp());
   if (launchedFromNotification) {
     WidgetsBinding.instance.addPostFrameCallback((_) {

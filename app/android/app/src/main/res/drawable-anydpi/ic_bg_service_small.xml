@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ícono de la notificación del servicio (el plugin lo busca con este nombre).
+     Va en drawable-anydpi para ganarle a los PNG por densidad del plugin. -->
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/ic_stat_b2b" />

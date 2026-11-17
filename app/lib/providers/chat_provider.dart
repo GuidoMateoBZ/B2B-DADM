@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+
 import '../data/message_storage.dart';
 import '../data/models/chat_message.dart';
 
@@ -26,6 +27,17 @@ class ChatProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  /// Recarga la lista y el chat activo después de un mensaje escrito por el
+  /// isolate del servicio de red.
+  Future<void> refreshFromStorage() async {
+    final activeReceiverId = _activeReceiverId;
+    _conversations = await MessageStorage.getConversations();
+    if (activeReceiverId != null) {
+      _messages = await MessageStorage.getByConversation(activeReceiverId);
+    }
+    notifyListeners();
   }
 
   /// Abre una conversación específica y carga su historial de mensajes.

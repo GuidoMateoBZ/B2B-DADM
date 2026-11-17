@@ -490,7 +490,8 @@ class _HomeScreenState extends State<HomeScreen> {
         size: 16,
       );
     }
-    if (nearby.state == NearbyState.connecting ||
+    if (nearby.state == NearbyState.disconnecting ||
+        nearby.state == NearbyState.connecting ||
         (nearby.isSearching && nearby.connectedCount == 0)) {
       return const SizedBox(
         width: 16,
@@ -508,6 +509,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _buildStatusText(NearbyProvider nearby) {
+    if (nearby.state == NearbyState.disconnecting) {
+      return 'Desconectando de la red Mesh...';
+    }
     if (nearby.state == NearbyState.noMedia) {
       return 'Sin medios de conexión: activá el Bluetooth';
     }
@@ -536,12 +540,14 @@ class _HomeScreenState extends State<HomeScreen> {
     NearbyProvider nearby,
     String? nodeId,
   ) {
-    if (nearby.isSearching) {
+    final disconnecting = nearby.state == NearbyState.disconnecting;
+    // Con el cierre fallido el servicio sigue vivo: se ofrece reintentarlo.
+    if (disconnecting || nearby.isSearching || nearby.stopFailed) {
       return OutlinedButton.icon(
         style: OutlinedButton.styleFrom(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         ),
-        onPressed: () => nearby.stopSearching(),
+        onPressed: disconnecting ? null : () => nearby.stopSearching(),
         icon: const Icon(Icons.link_off, size: 16),
         label: const Text('Desconectar', style: TextStyle(fontSize: 12)),
       );

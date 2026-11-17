@@ -68,13 +68,14 @@ class MessageStorage {
   }
 
   /// Guarda un mensaje (upsert: ignora si ya existe por id)
-  static Future<void> insert(ChatMessage msg) async {
+  static Future<bool> insert(ChatMessage msg) async {
     final db = await database;
-    await db.insert(
+    final rowId = await db.insert(
       'messages',
       msg.toMap(),
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
+    return rowId != -1;
   }
 
   /// Obtiene todos los mensajes de una conversación ordenados por timestamp
