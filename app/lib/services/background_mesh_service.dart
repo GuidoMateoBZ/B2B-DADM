@@ -10,6 +10,9 @@ import '../providers/nearby_provider.dart';
 const _notificationChannelId = 'mesh_service';
 const _notificationId = 7021;
 
+/// Lo emite el servicio justo antes de `stopSelf()`.
+const serviceStoppedEvent = 'service_stopped';
+
 class BackgroundMeshService {
   BackgroundMeshService._() {
     _service.on('service_ready').listen((_) {
@@ -17,13 +20,21 @@ class BackgroundMeshService {
       _readyCompleter?.complete();
       _readyCompleter = null;
     });
+    _service.on(serviceStoppedEvent).listen((_) {
+      _isReady = false;
+      _isStopping = true;
+    });
   }
 
   static final BackgroundMeshService instance = BackgroundMeshService._();
 
   final FlutterBackgroundService _service = FlutterBackgroundService();
   bool _isReady = false;
+  bool _isStopping = false;
   Completer<void>? _readyCompleter;
+
+  static const Duration _stopWaitTimeout = Duration(seconds: 5);
+  static const Duration _stopPollInterval = Duration(milliseconds: 100);
 
   Stream<Map<String, dynamic>?> on(String event) => _service.on(event);
 
@@ -66,6 +77,7 @@ class BackgroundMeshService {
   }
 
   Future<bool> ensureRunning() async {
+    if (_isStopping) await _waitUntilStopped();
     final running = await _service.isRunning();
     if (!running) {
       _isReady = false;
@@ -86,6 +98,16 @@ class BackgroundMeshService {
       _readyCompleter = null;
       return false;
     }
+  }
+
+  /// El servicio avisó que se detiene: se espera a que muera para no mandarle
+  /// comandos que se perderían.
+  Future<void> _waitUntilStopped() async {
+    final deadline = DateTime.now().add(_stopWaitTimeout);
+    while (await _service.isRunning() && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(_stopPollInterval);
+    }
+    _isStopping = false;
   }
 
   void invoke(String method, [Map<String, dynamic>? args]) {
@@ -118,7 +140,10 @@ void backgroundMeshServiceEntryPoint(ServiceInstance service) async {
   });
   service.on('stop_search').listen((_) async {
     final stopped = await controller.stopSearchingInBackground();
-    if (stopped) {
+    // Un start_search que llegó durante el cierre quedó encolado detrás:
+    // en ese caso el servicio sigue vivo con la sesión nueva.
+    if (stopped && !controller.isSearching && !controller.hasPendingStart) {
+      service.invoke(serviceStoppedEvent);
       await service.stopSelf();
     }
   });

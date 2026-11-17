@@ -22,8 +22,11 @@ import 'chat_provider.dart';
 /// Estados posibles del sistema Nearby Connections.
 /// `noMedia` (sin Bluetooth ni Wi-Fi) y `noLocation` (ubicación apagada y sin
 /// vecinos) son pausas automáticas: la red se reanuda sola al volver el medio.
+/// `disconnecting` solo existe en la UI: se pidió el cierre y se espera la
+/// confirmación del servicio.
 enum NearbyState {
   idle,
+  disconnecting,
   searching,
   connecting,
   connected,
@@ -90,6 +93,28 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   Completer<void>? _stopDisconnectionsCompleter;
   bool _isStoppingMesh = false;
 
+  /// `start_search` recibidos que todavía no terminaron (pueden estar
+  /// encolados detrás de un cierre).
+  int _pendingStarts = 0;
+  bool get hasPendingStart => _pendingStarts > 0;
+
+  /// Servicio: hay un cierre en curso o terminado (hasta que el servicio
+  /// muera o llegue un inicio nuevo). Viaja en el snapshot como `stopping`.
+  bool _stopInProgress = false;
+
+  /// El último cierre no se pudo confirmar: el servicio sigue vivo en `error`
+  /// y la UI ofrece reintentar la desconexión.
+  bool _stopFailed = false;
+  bool get stopFailed => _stopFailed;
+
+  /// UI: se mandó `stop_search` y todavía no llegó un snapshot con
+  /// `stopping: true` ni el aviso de que el servicio se detuvo.
+  bool _stopRequested = false;
+  bool _stopAcknowledged = false;
+  Timer? _stopWatchdog;
+  StreamSubscription<Map<String, dynamic>?>? _serviceStoppedSub;
+  static const Duration _stopUiTimeout = Duration(seconds: 15);
+
   /// Serializa las operaciones que tocan Nearby (inicio, pausas, reinicios).
   Future<void> _opChain = Future.value();
   static const Duration _stopDisconnectionTimeout = Duration(seconds: 5);
@@ -121,6 +146,9 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     _messageSub = _backgroundService.on('messages_changed').listen((_) {
       unawaited(_chatProvider?.refreshFromStorage());
     });
+    _serviceStoppedSub = _backgroundService
+        .on(serviceStoppedEvent)
+        .listen((_) => _onServiceStopped());
     _navigationSub = appNavigationObserver.changes.listen((_) {
       _publishUiPresence();
     });
@@ -188,13 +216,27 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       ],
       'connected': Map<String, String>.from(_connectedEndpoints),
       'connecting': _connectingEndpoints.toList(),
+      'stopping': _stopInProgress,
+      'stopFailed': _stopFailed,
     });
   }
 
   void _applyServiceSnapshot(Map<String, dynamic>? snapshot) {
     if (_isBackgroundController || snapshot == null) return;
+    final stopping = snapshot['stopping'] as bool? ?? false;
+    if (_stopRequested && !stopping && !_stopAcknowledged) {
+      // Snapshot anterior a que el servicio procesara el stop_search.
+      return;
+    }
+    if (stopping) {
+      _stopAcknowledged = true;
+    } else {
+      // El cierre terminó sin detener el servicio: falló o llegó un inicio.
+      _endStopWait();
+    }
     final previousState = _state;
-    final stateName = snapshot['state'] as String?;
+    _stopFailed = snapshot['stopFailed'] as bool? ?? false;
+    final stateName = stopping ? NearbyState.disconnecting.name : snapshot['state'] as String?;
     if (stateName != null) {
       _state = NearbyState.values.firstWhere(
         (state) => state.name == stateName,
@@ -331,26 +373,37 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (initialUiState != null) {
       updateUiPresence(Map<String, dynamic>.from(initialUiState));
     }
-    if (_myNodeId == nodeId && _policy.state != MeshState.idle) {
-      _log('start_search ignorado: sesión ya activa');
-      emitServiceSnapshot();
-      return;
+    // Todo el inicio va dentro de la cola: si hay un cierre en curso, se
+    // evalúa el estado recién cuando terminó.
+    _pendingStarts++;
+    try {
+      await _enqueue(() async {
+        if (_myNodeId == nodeId && _policy.state != MeshState.idle) {
+          _log('start_search ignorado: sesión ya activa');
+          emitServiceSnapshot();
+          return;
+        }
+        _isStoppingMesh = false;
+        _stopInProgress = false;
+        _stopFailed = false;
+        _relay = MessageRelay(myNodeId: nodeId);
+        _policy.clearBlocks();
+        _errorMessage = null;
+        _discoveredEndpoints.clear();
+        _myNodeId = nodeId;
+        await (await SharedPreferences.getInstance()).setBool(
+          _activeSessionKey,
+          true,
+        );
+        final media = initialMedia != null
+            ? MediaState.fromMap(initialMedia)
+            : await _mediaService.current();
+        if (media != null) _policy.onMediaEvent(media);
+        await _execute(_policy.connect());
+      });
+    } finally {
+      _pendingStarts--;
     }
-    _isStoppingMesh = false;
-    _relay = MessageRelay(myNodeId: nodeId);
-    _policy.clearBlocks();
-    _errorMessage = null;
-    _discoveredEndpoints.clear();
-    _myNodeId = nodeId;
-    await (await SharedPreferences.getInstance()).setBool(
-      _activeSessionKey,
-      true,
-    );
-    final media = initialMedia != null
-        ? MediaState.fromMap(initialMedia)
-        : await _mediaService.current();
-    if (media != null) _policy.onMediaEvent(media);
-    await _enqueue(() => _execute(_policy.connect()));
   }
 
   /// Inicia advertising y, si la máquina está en `running`, también discovery.
@@ -448,24 +501,68 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   /// Detiene todas las conexiones, advertising y discovery.
+  ///
+  /// En la UI no se asume el resultado: queda en `disconnecting` hasta que el
+  /// servicio avise que se detuvo o mande un snapshot que diga otra cosa.
   Future<void> stopSearching() async {
     if (!_isBackgroundController) {
-      _backgroundService.invoke('stop_search');
-      _remoteIsSearching = false;
-      _state = NearbyState.idle;
-      _connectedEndpoints.clear();
-      _discoveredEndpoints.clear();
-      _connectingEndpoints.clear();
+      if (_state == NearbyState.disconnecting) return;
+      if (!await _backgroundService.isRunning()) {
+        _onServiceStopped();
+        return;
+      }
+      _stopRequested = true;
+      _stopAcknowledged = false;
+      _state = NearbyState.disconnecting;
       _errorMessage = null;
       notifyListeners();
+      _backgroundService.invoke('stop_search');
+      _stopWatchdog?.cancel();
+      _stopWatchdog = Timer(_stopUiTimeout, () => unawaited(_onStopTimeout()));
       return;
     }
     await stopSearchingInBackground();
   }
 
+  /// El servicio avisó que se detiene (o ya no corre): estado de reposo.
+  void _onServiceStopped() {
+    _endStopWait();
+    _remoteIsSearching = false;
+    _stopFailed = false;
+    _state = NearbyState.idle;
+    _connectedEndpoints.clear();
+    _discoveredEndpoints.clear();
+    _connectingEndpoints.clear();
+    _errorMessage = null;
+    _log('Servicio detenido');
+    notifyListeners();
+  }
+
+  /// Respaldo si el aviso del servicio nunca llega (por ejemplo, murió).
+  Future<void> _onStopTimeout() async {
+    if (!_stopRequested && _state != NearbyState.disconnecting) return;
+    _log('Sin confirmación del cierre en ${_stopUiTimeout.inSeconds} s');
+    if (!await _backgroundService.isRunning()) {
+      _onServiceStopped();
+      return;
+    }
+    _endStopWait();
+    _backgroundService.invoke('request_snapshot');
+  }
+
+  void _endStopWait() {
+    _stopRequested = false;
+    _stopAcknowledged = false;
+    _stopWatchdog?.cancel();
+    _stopWatchdog = null;
+  }
+
   Future<bool> stopSearchingInBackground() async {
     if (!_isBackgroundController) return false;
     _isStoppingMesh = true;
+    _stopInProgress = true;
+    _stopFailed = false;
+    emitServiceSnapshot();
     await (await SharedPreferences.getInstance()).setBool(
       _activeSessionKey,
       false,
@@ -510,6 +607,9 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
           ? null
           : 'No se pudo confirmar el cierre de la red Nearby.';
       _state = stopped ? NearbyState.idle : NearbyState.error;
+      // Con éxito sigue en true hasta que el servicio muera o llegue un inicio.
+      _stopInProgress = stopped;
+      _stopFailed = !stopped;
       notifyListeners();
     });
     return stopped;
@@ -1071,6 +1171,8 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     _snapshotSub?.cancel();
     _messageSub?.cancel();
     _navigationSub?.cancel();
+    _serviceStoppedSub?.cancel();
+    _stopWatchdog?.cancel();
     _mediaDebounce?.cancel();
     _rediscoveryDebounce?.cancel();
     _cancelSafetyTimer();
