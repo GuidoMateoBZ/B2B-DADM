@@ -325,7 +325,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       'Sin vecinos conectados. El mensaje se guardará y se podrá enviar cuando haya nodos en la red.',
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.orange.shade900,
+                        color: theme.brightness == Brightness.dark
+                            ? Colors.orange.shade200
+                            : Colors.orange.shade900,
                       ),
                     ),
                   ),

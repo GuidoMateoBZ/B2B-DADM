@@ -220,7 +220,9 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                         ? 'Difusión epidémica: alcanzando ${nearbyProvider.connectedCount} vecino(s) directos + reenvío multi-hop'
                         : 'Sin vecinos conectados: la alerta se guardará localmente',
                     style: theme.textTheme.bodySmall?.copyWith(
-                      color: Colors.red.shade900,
+                      color: theme.brightness == Brightness.dark
+                          ? Colors.red.shade200
+                          : Colors.red.shade900,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -385,10 +387,24 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
       }
     }
 
+    // En modo oscuro: fondo apenas teñido sobre la superficie y textos claros.
+    final dark = theme.brightness == Brightness.dark;
+    final accent = msg.isMine
+        ? (dark ? Colors.red.shade200 : Colors.red.shade900)
+        : (dark ? Colors.deepOrange.shade200 : Colors.deepOrange.shade900);
+    final background = dark
+        ? Color.alphaBlend(
+            (msg.isMine ? Colors.red : Colors.deepOrange).withValues(
+              alpha: 0.16,
+            ),
+            theme.colorScheme.surface,
+          )
+        : (msg.isMine ? Colors.red.shade50 : Colors.orange.shade50);
+
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       elevation: 1,
-      color: msg.isMine ? Colors.red.shade50 : Colors.orange.shade50,
+      color: background,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
         side: BorderSide(
@@ -418,7 +434,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                         fontFamily: 'monospace',
                         fontWeight: FontWeight.bold,
                         fontSize: 13,
-                        color: msg.isMine ? Colors.red.shade900 : Colors.deepOrange.shade900,
+                        color: accent,
                       ),
                     ),
                   ],
@@ -426,7 +442,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                 Text(
                   _formatTimestamp(msg.timestamp),
                   style: theme.textTheme.bodySmall?.copyWith(
-                    color: Colors.grey.shade700,
+                    color: theme.colorScheme.onSurfaceVariant,
                     fontSize: 11,
                   ),
                 ),
@@ -448,9 +464,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
                   icon: const Icon(Icons.location_on, size: 18),
                   label: const Text('Ver ubicación en Google Maps'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: msg.isMine
-                        ? Colors.red.shade900
-                        : Colors.deepOrange.shade900,
+                    foregroundColor: accent,
                     side: BorderSide(
                       color: msg.isMine
                           ? Colors.red.shade400

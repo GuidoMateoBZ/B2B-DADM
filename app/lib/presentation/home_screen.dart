@@ -7,6 +7,7 @@ import '../data/message_storage.dart';
 import '../providers/chat_provider.dart';
 import '../providers/contact_provider.dart';
 import '../providers/nearby_provider.dart';
+import '../providers/theme_provider.dart';
 import '../providers/node_id_provider.dart';
 import '../services/local_notification_service.dart';
 import 'contact_screen.dart';
@@ -250,7 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
               } else if (val == 'neighbors') {
                 _showConnectedNeighbors(context, nearbyProvider);
               } else if (val == 'theme') {
-                // Pendiente: alternar entre modo claro y oscuro.
+                context.read<ThemeProvider>().toggle();
               }
             },
             itemBuilder: (_) => [

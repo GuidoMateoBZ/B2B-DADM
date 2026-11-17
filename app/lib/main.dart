@@ -11,6 +11,7 @@ import 'providers/chat_provider.dart';
 import 'providers/contact_provider.dart';
 import 'providers/nearby_provider.dart';
 import 'providers/node_id_provider.dart';
+import 'providers/theme_provider.dart';
 import 'services/background_mesh_service.dart';
 import 'services/local_notification_service.dart';
 
@@ -42,6 +43,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => ThemeProvider()..load()),
         ChangeNotifierProvider(create: (_) => NodeIdProvider()..loadId()),
         ChangeNotifierProvider(
           create: (_) => ChatProvider()..loadConversations(),
@@ -56,20 +58,30 @@ class MyApp extends StatelessWidget {
                 ..setChatProvider(chatProvider),
         ),
       ],
-      child: MaterialApp(
-        debugShowCheckedModeBanner: false,
-        title: 'B2B',
-        navigatorKey: appNavigatorKey,
-        navigatorObservers: [appNavigationObserver],
-        routes: {
-          '/': (_) => const HomeScreen(),
-          chatRouteName: (_) => const ChatScreen(),
-          broadcastRouteName: (_) => const BroadcastScreen(),
-          contactsRouteName: (_) => const ContactScreen(),
-        },
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-          useMaterial3: true,
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) => MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'B2B',
+          navigatorKey: appNavigatorKey,
+          navigatorObservers: [appNavigationObserver],
+          routes: {
+            '/': (_) => const HomeScreen(),
+            chatRouteName: (_) => const ChatScreen(),
+            broadcastRouteName: (_) => const BroadcastScreen(),
+            contactsRouteName: (_) => const ContactScreen(),
+          },
+          theme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+            useMaterial3: true,
+          ),
+          darkTheme: ThemeData(
+            colorScheme: ColorScheme.fromSeed(
+              seedColor: Colors.deepPurple,
+              brightness: Brightness.dark,
+            ),
+            useMaterial3: true,
+          ),
+          themeMode: themeProvider.themeMode,
         ),
       ),
     );
