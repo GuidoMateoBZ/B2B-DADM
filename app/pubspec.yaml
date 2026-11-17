@@ -69,17 +69,19 @@ flutter_launcher_icons:
   image_path: "assets/icon/B2B_icon_adjusted.png"
   android: true
 
-# Pantalla de presentación: fondo del logo y el glifo solo, sin el círculo
-# blanco que agrega el sistema al ícono de la app. La imagen (glifo + "B2B
-# MESH" tallado) sale de tool/make_splash.py; después regenerar con
+# Pantalla de presentación: fondo casi negro, el glifo en contorno violeta al
+# centro y "B2B MESH" al pie (imagen de marca). Las imágenes salen de
+# tool/make_splash.py; después regenerar con
 # `dart run flutter_native_splash:create`.
 flutter_native_splash:
-  color: "#171228"
+  color: "#121214"
   image: assets/icon/B2B_splash.png
+  branding: assets/icon/B2B_splash_branding.png
   android_12:
-    color: "#171228"
+    color: "#121214"
     image: assets/icon/B2B_splash.png
-    icon_background_color: "#171228"
+    icon_background_color: "#121214"
+    branding: assets/icon/B2B_splash_branding.png
   ios: false
   web: false
 
