@@ -208,4 +208,75 @@ void main() {
       expect(nearby.advertisingStarts, 1);
     });
   });
+
+  group('texto de la notificación', () {
+    String text(
+      NearbyState state, {
+      int connected = 0,
+      bool stopping = false,
+    }) => MeshController.notificationText(
+      MeshSnapshot(
+        state: state,
+        connected: {for (var i = 0; i < connected; i++) 'E$i': 'nodo-$i'},
+        stopping: stopping,
+      ),
+    );
+
+    test('describe cada estado', () {
+      expect(text(NearbyState.searching), 'Red mesh activa · buscando vecinos');
+      expect(
+        text(NearbyState.connecting),
+        'Red mesh activa · conectando con un vecino',
+      );
+      expect(
+        text(NearbyState.connected, connected: 1),
+        'Red mesh activa · 1 vecino conectado',
+      );
+      expect(
+        text(NearbyState.connected, connected: 3),
+        'Red mesh activa · 3 vecinos conectados',
+      );
+      expect(
+        text(NearbyState.noMedia),
+        'Red mesh en pausa · activá el Bluetooth',
+      );
+      expect(
+        text(NearbyState.noLocation),
+        'Red mesh activa · sin ubicación, no busca vecinos nuevos',
+      );
+      expect(text(NearbyState.error), 'Red mesh con error · abrí la app');
+      expect(text(NearbyState.idle), 'Red mesh detenida');
+      expect(
+        text(NearbyState.searching, stopping: true),
+        'Desconectando la red mesh',
+      );
+    });
+
+    test('con vecinos conectados manda la cantidad', () {
+      expect(
+        text(NearbyState.connecting, connected: 2),
+        'Red mesh activa · 2 vecinos conectados',
+      );
+      expect(
+        text(NearbyState.noLocation, connected: 1),
+        'Red mesh activa · 1 vecino conectado',
+      );
+    });
+
+    test('solo se actualiza cuando cambia el texto', () async {
+      final texts = <String>[];
+      final c = MeshController(
+        onNotificationText: texts.add,
+        nearby: FakeNearbyService(),
+        mediaService: FakeMediaStateService(),
+      );
+      addTearDown(c.dispose);
+
+      await c.startSearching('nodo-a', initialMedia: _allOn);
+      c.emitSnapshot();
+      c.emitSnapshot();
+
+      expect(texts, ['Red mesh activa · buscando vecinos']);
+    });
+  });
 }

@@ -10,6 +10,7 @@ import 'mesh_protocol.dart';
 
 const _notificationChannelId = 'mesh_service';
 const _notificationId = 7021;
+const _notificationTitle = 'B2B Mesh';
 
 class BackgroundMeshService {
   BackgroundMeshService._() {
@@ -63,8 +64,8 @@ class BackgroundMeshService {
           AndroidForegroundType.location,
         ],
         notificationChannelId: _notificationChannelId,
-        initialNotificationTitle: 'B2B Mesh',
-        initialNotificationContent: 'Preparando conexión segura',
+        initialNotificationTitle: _notificationTitle,
+        initialNotificationContent: 'Red mesh activa',
         foregroundServiceNotificationId: _notificationId,
       ),
       iosConfiguration: IosConfiguration(
@@ -120,7 +121,19 @@ void backgroundMeshServiceEntryPoint(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
 
-  final controller = MeshController(emit: service.invoke);
+  final controller = MeshController(
+    emit: service.invoke,
+    onNotificationText: (text) {
+      if (service is AndroidServiceInstance) {
+        unawaited(
+          service.setForegroundNotificationInfo(
+            title: _notificationTitle,
+            content: text,
+          ),
+        );
+      }
+    },
+  );
 
   String? str(Map<String, dynamic>? event, String key) =>
       event?[key] is String ? event![key] as String : null;

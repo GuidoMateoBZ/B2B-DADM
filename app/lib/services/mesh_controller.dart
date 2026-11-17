@@ -28,6 +28,7 @@ typedef MeshEmitter = void Function(String event, [Map<String, dynamic>? data]);
 class MeshController {
   MeshController({
     this._emit,
+    this._onNotificationText,
     NearbyService? nearby,
     MediaStateService? mediaService,
     this.stopDisconnectionTimeout = const Duration(seconds: 5),
@@ -46,6 +47,10 @@ class MeshController {
   static const String activeSessionKey = 'mesh_session_active';
 
   final MeshEmitter? _emit;
+
+  /// Actualiza el texto de la notificación persistente del servicio.
+  final void Function(String text)? _onNotificationText;
+  String? _lastNotificationText;
   final NearbyService _service;
   final MediaStateService _mediaService;
   final MeshRecoveryPolicy _policy = MeshRecoveryPolicy();
@@ -141,7 +146,40 @@ class MeshController {
     stopFailed: _stopFailed,
   );
 
-  void emitSnapshot() => _emit?.call(MeshEvent.snapshot, snapshot.toMap());
+  void emitSnapshot() {
+    final current = snapshot;
+    _emit?.call(MeshEvent.snapshot, current.toMap());
+    _updateNotification(current);
+  }
+
+  /// Solo actualiza la notificación cuando cambia el texto, no en cada snapshot.
+  void _updateNotification(MeshSnapshot current) {
+    final text = notificationText(current);
+    if (text == _lastNotificationText) return;
+    _lastNotificationText = text;
+    _onNotificationText?.call(text);
+  }
+
+  /// Texto de la notificación persistente según el estado de la red.
+  static String notificationText(MeshSnapshot s) {
+    if (s.stopping) return 'Desconectando la red mesh';
+    final n = s.connected.length;
+    final linked = n == 1 ? '1 vecino conectado' : '$n vecinos conectados';
+    return switch (s.state) {
+      NearbyState.noMedia => 'Red mesh en pausa · activá el Bluetooth',
+      NearbyState.noLocation when n > 0 => 'Red mesh activa · $linked',
+      NearbyState.noLocation =>
+        'Red mesh activa · sin ubicación, no busca vecinos nuevos',
+      NearbyState.error => 'Red mesh con error · abrí la app',
+      NearbyState.idle => 'Red mesh detenida',
+      NearbyState.disconnecting => 'Desconectando la red mesh',
+      // Con enlaces vivos manda la cantidad de vecinos, aunque haya un
+      // intento de conexión en curso.
+      _ when n > 0 => 'Red mesh activa · $linked',
+      NearbyState.connecting => 'Red mesh activa · conectando con un vecino',
+      _ => 'Red mesh activa · buscando vecinos',
+    };
+  }
 
   void _changed() => emitSnapshot();
 
