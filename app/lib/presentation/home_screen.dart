@@ -209,6 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final nodeIdProvider = context.watch<NodeIdProvider>();
     final nearbyProvider = context.watch<NearbyProvider>();
+    final status = _buildStatusText(nearbyProvider);
     final chatProvider = context.watch<ChatProvider>();
     final contactProvider = context.watch<ContactProvider>();
     final theme = Theme.of(context);
@@ -381,25 +382,18 @@ class _HomeScreenState extends State<HomeScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _buildStatusText(nearbyProvider),
+                                  status.title,
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 13,
                                   ),
                                 ),
-                                if (nearbyProvider.connectedCount > 0)
-                                  GestureDetector(
-                                    onTap: () => _showConnectedNeighbors(
-                                      context,
-                                      nearbyProvider,
-                                    ),
-                                    child: Text(
-                                      '${nearbyProvider.connectedCount} vecino(s) conectado(s) - Toca para ver',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: theme.colorScheme.primary,
-                                        decoration: TextDecoration.underline,
-                                      ),
+                                if (status.detail != null)
+                                  Text(
+                                    status.detail!,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: theme.colorScheme.onSurfaceVariant,
                                     ),
                                   ),
                               ],
@@ -508,31 +502,44 @@ class _HomeScreenState extends State<HomeScreen> {
     return const Icon(Icons.circle_outlined, color: Colors.grey, size: 14);
   }
 
-  String _buildStatusText(NearbyProvider nearby) {
+  /// Título del estado de la red y, debajo, una aclaración de qué está
+  /// haciendo. La lista de vecinos se abre desde el menú de opciones.
+  ({String title, String? detail}) _buildStatusText(NearbyProvider nearby) {
+    final n = nearby.connectedCount;
+    final linked = n == 1 ? '1 vecino conectado' : '$n vecinos conectados';
     if (nearby.state == NearbyState.disconnecting) {
-      return 'Desconectando de la red Mesh...';
+      return (title: 'Desconectando de la red Mesh...', detail: null);
     }
     if (nearby.state == NearbyState.noMedia) {
-      return 'Sin medios de conexión: activá el Bluetooth';
+      return (
+        title: 'Red Mesh en pausa',
+        detail: 'Sin medios de conexión: activá el Bluetooth',
+      );
     }
     if (nearby.state == NearbyState.noLocation) {
-      return 'Activá la ubicación para buscar vecinos';
+      return (
+        title: 'Red Mesh activa',
+        detail: n > 0
+            ? '$linked · activá la ubicación para buscar más'
+            : 'Activá la ubicación para buscar vecinos',
+      );
     }
-    if (nearby.connectedCount > 0) {
-      return nearby.isSearching
-          ? 'Red Mesh activa (Buscando vecinos)'
-          : 'Red Mesh conectada';
-    }
-    if (nearby.isSearching) {
-      return 'Conectando a la red Mesh...';
+    if (n > 0) {
+      return (
+        title: 'Red Mesh activa',
+        detail: nearby.isSearching ? '$linked · buscando más' : linked,
+      );
     }
     if (nearby.state == NearbyState.connecting) {
-      return 'Conectando con vecino...';
+      return (title: 'Red Mesh activa', detail: 'Conectando con un vecino...');
+    }
+    if (nearby.isSearching) {
+      return (title: 'Red Mesh activa', detail: 'Buscando vecinos...');
     }
     if (nearby.state == NearbyState.error) {
-      return 'Error de red Nearby';
+      return (title: 'Error de red Nearby', detail: null);
     }
-    return 'Desconectado';
+    return (title: 'Desconectado', detail: null);
   }
 
   Widget _buildSearchToggleButton(
