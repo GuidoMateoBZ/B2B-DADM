@@ -1,12 +1,15 @@
 import 'package:flutter/services.dart';
+import 'package:media_state/media_state.dart';
 
 import '../data/models/media_state.dart';
 
 /// Observa el estado de los medios (Bluetooth, Wi-Fi, ubicación, modo avión)
 /// mediante un EventChannel nativo que emite un snapshot completo en cada cambio.
+/// El plugin `media_state` registra los canales en cada engine, así que funciona
+/// tanto en la UI como en el isolate del servicio de fondo.
 class MediaStateService {
-  static const EventChannel _events = EventChannel('com.b2b.dadm/media_state');
-  static const MethodChannel _query = MethodChannel('com.b2b.dadm/media_state_query');
+  static const EventChannel _events = EventChannel(mediaStateEventChannel);
+  static const MethodChannel _query = MethodChannel(mediaStateQueryChannel);
 
   /// Emite un snapshot al suscribirse y ante cada cambio de medios.
   Stream<MediaState> get stream => _events

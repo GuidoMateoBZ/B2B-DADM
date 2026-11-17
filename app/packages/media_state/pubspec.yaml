@@ -1,0 +1,19 @@
+name: media_state
+description: "Observa Bluetooth, Wi-Fi, ubicación y modo avión desde cualquier engine de Flutter, incluido el del servicio de fondo."
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.1
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.b2b.media_state
+        pluginClass: MediaStatePlugin

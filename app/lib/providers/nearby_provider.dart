@@ -121,11 +121,6 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     _messageSub = _backgroundService.on('messages_changed').listen((_) {
       unawaited(_chatProvider?.refreshFromStorage());
     });
-    _mediaSub = _mediaService.stream.listen(
-      (media) => _backgroundService.invoke('media_state', media.toMap()),
-      onError: (Object e) =>
-          debugPrint('[NearbyProvider] Error en observer de medios: $e'),
-    );
     _navigationSub = appNavigationObserver.changes.listen((_) {
       _publishUiPresence();
     });
@@ -138,6 +133,13 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       _mediaService = MediaStateService() {
     _relay = MessageRelay(myNodeId: '');
     _setupCallbacks();
+    // El plugin de medios también está registrado en el engine del servicio:
+    // los cambios llegan aunque la app esté cerrada.
+    _mediaSub = _mediaService.stream.listen(
+      _onMediaChanged,
+      onError: (Object e) =>
+          debugPrint('[NearbyProvider] Error en observer de medios: $e'),
+    );
   }
 
   Future<void> initializeBackgroundController() async {
@@ -146,6 +148,9 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (preferences.getBool(_activeSessionKey) != true) return;
 
     final nodeId = await NodeIdStorage().getId();
+    // Sesión restaurada: la policy decide con los medios actuales.
+    final media = await _mediaService.current();
+    if (media != null) _policy.onMediaEvent(media);
     final action = _policy.connect();
     _myNodeId = nodeId;
     _relay = MessageRelay(myNodeId: nodeId);
@@ -341,9 +346,10 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
       _activeSessionKey,
       true,
     );
-    if (initialMedia != null) {
-      _policy.onMediaEvent(MediaState.fromMap(initialMedia));
-    }
+    final media = initialMedia != null
+        ? MediaState.fromMap(initialMedia)
+        : await _mediaService.current();
+    if (media != null) _policy.onMediaEvent(media);
     await _enqueue(() => _execute(_policy.connect()));
   }
 
@@ -914,16 +920,7 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onMediaChanged(MediaState media) {
-    if (!_isBackgroundController) {
-      _backgroundService.invoke('media_state', media.toMap());
-      return;
-    }
-    applyMediaStateInBackground(media.toMap());
-  }
-
-  void applyMediaStateInBackground(Map<dynamic, dynamic> mediaState) {
     if (!_isBackgroundController) return;
-    final media = MediaState.fromMap(mediaState);
     debugPrint('[NearbyProvider] Medios: $media');
     _policy.onMediaEvent(media);
     _mediaDebounce?.cancel();
@@ -1058,19 +1055,11 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     _connectTimers.clear();
   }
 
+  /// La relectura de medios al volver a `resumed` ya no hace falta: el
+  /// servicio observa los medios directamente, también con la app cerrada.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     _publishUiPresence();
-    if (_isBackgroundController) return;
-    if (state != AppLifecycleState.resumed || !isSearching) return;
-    // Pasa por la misma espera de estabilidad que los eventos: al cambiar el
-    // modo avión desde el panel rápido, la app vuelve a `resumed` en plena
-    // transición de los medios y aplicar las reglas ahí reiniciaría demasiado pronto.
-    unawaited(
-      _mediaService.current().then((media) {
-        if (media != null) _onMediaChanged(media);
-      }),
-    );
   }
 
   @override

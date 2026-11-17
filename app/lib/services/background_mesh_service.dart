@@ -134,9 +134,6 @@ void backgroundMeshServiceEntryPoint(ServiceInstance service) async {
       await controller.sendEnvelopeInBackground(encoded);
     }
   });
-  service.on('media_state').listen((event) {
-    if (event != null) controller.applyMediaStateInBackground(event);
-  });
   service.on('ui_state').listen((event) {
     if (event != null) controller.updateUiPresence(event);
   });

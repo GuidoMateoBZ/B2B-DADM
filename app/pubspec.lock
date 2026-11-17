@@ -384,6 +384,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.0"
+  media_state:
+    dependency: "direct main"
+    description:
+      path: "packages/media_state"
+      relative: true
+    source: path
+    version: "0.0.1"
   meta:
     dependency: transitive
     description:
