@@ -47,7 +47,12 @@ class BackgroundMeshService {
         autoStart: false,
         autoStartOnBoot: false,
         isForegroundMode: true,
-        foregroundServiceTypes: const [AndroidForegroundType.connectedDevice],
+        // `location` mantiene el acceso a la ubicación (requerido por el
+        // discovery de Nearby) con la app cerrada; sin él falla con 8034.
+        foregroundServiceTypes: const [
+          AndroidForegroundType.connectedDevice,
+          AndroidForegroundType.location,
+        ],
         notificationChannelId: _notificationChannelId,
         initialNotificationTitle: 'B2B Mesh',
         initialNotificationContent: 'Preparando conexión segura',

@@ -1013,8 +1013,25 @@ class NearbyProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (action == SafetyAction.restartDiscoveryAndAdvertising) {
       await _service.restartAdvertising(nodeId);
     }
-    await _service.restartDiscovery(nodeId);
+    _service.lastError = null;
+    final restarted = await _service.restartDiscovery(nodeId);
+    // El fallo no cambia el estado de la policy: solo queda visible en el
+    // snapshot hasta el próximo reinicio exitoso.
+    if (!restarted) {
+      _errorMessage =
+          '$_safetyDiscoveryErrorPrefix'
+          '${_service.lastError ?? 'error desconocido'}';
+      _log('Control de seguridad: $_errorMessage');
+      notifyListeners();
+    } else if (_errorMessage?.startsWith(_safetyDiscoveryErrorPrefix) ??
+        false) {
+      _errorMessage = null;
+      notifyListeners();
+    }
   }
+
+  static const String _safetyDiscoveryErrorPrefix =
+      'No se pudo reiniciar la búsqueda de vecinos: ';
 
   Future<bool> _safeStopAll() async {
     try {
