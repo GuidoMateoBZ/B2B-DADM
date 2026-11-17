@@ -556,7 +556,8 @@ class _HomeScreenState extends State<HomeScreen> {
     if (n > 0) {
       return (
         title: 'Red Mesh activa',
-        detail: nearby.isSearching ? '$linked · buscando más' : linked,
+        // La red sigue buscando mientras está activa; el título ya lo dice.
+        detail: linked,
       );
     }
     if (nearby.state == NearbyState.connecting) {
