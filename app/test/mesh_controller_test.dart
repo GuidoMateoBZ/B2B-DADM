@@ -177,7 +177,31 @@ void main() {
     });
   });
 
-  group('inicio', () {
+  group('carrera Desconectar → Conectar', () {
+    test(
+      'un start_search durante el cierre impide detener el servicio',
+      () async {
+        await startSession();
+        expect(nearby.advertisingStarts, 1);
+
+        final stop = controller.stopSearching();
+        final start = controller.startSearching('nodo-a', initialMedia: _allOn);
+
+        final stopped = await stop;
+        // Cuando el handler de stop_search decide, el inicio sigue encolado.
+        expect(stopped, isTrue);
+        expect(controller.hasPendingStart, isTrue);
+        expect(controller.canStopService, isFalse);
+
+        await start;
+        expect(controller.isSearching, isTrue);
+        expect(controller.hasPendingStart, isFalse);
+        expect(controller.snapshot.stopping, isFalse);
+        expect(controller.state, NearbyState.searching);
+        expect(nearby.advertisingStarts, 2);
+      },
+    );
+
     test('start_search con la sesión activa se ignora', () async {
       await startSession();
       await controller.startSearching('nodo-a', initialMedia: _allOn);

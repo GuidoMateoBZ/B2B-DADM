@@ -233,10 +233,6 @@ class MeshController {
     _stopInProgress = true;
     _stopFailed = false;
     emitSnapshot();
-    await (await SharedPreferences.getInstance()).setBool(
-      activeSessionKey,
-      false,
-    );
     _pendingStopEndpoints
       ..clear()
       ..addAll(_connectedEndpoints.keys);
@@ -244,7 +240,13 @@ class MeshController {
         ? null
         : Completer<void>();
     var stopped = false;
+    // Se encola sin ningún await previo: un start_search que llegue después
+    // tiene que quedar detrás del cierre, nunca delante.
     await _enqueue(() async {
+      await (await SharedPreferences.getInstance()).setBool(
+        activeSessionKey,
+        false,
+      );
       _policy.disconnect();
       _mediaDebounce?.cancel();
       _cancelSafetyTimer();
