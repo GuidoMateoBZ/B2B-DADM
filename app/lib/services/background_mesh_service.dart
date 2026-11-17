@@ -5,22 +5,20 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
-import '../providers/nearby_provider.dart';
+import 'mesh_controller.dart';
+import 'mesh_protocol.dart';
 
 const _notificationChannelId = 'mesh_service';
 const _notificationId = 7021;
 
-/// Lo emite el servicio justo antes de `stopSelf()`.
-const serviceStoppedEvent = 'service_stopped';
-
 class BackgroundMeshService {
   BackgroundMeshService._() {
-    _service.on('service_ready').listen((_) {
+    _service.on(MeshEvent.serviceReady).listen((_) {
       _isReady = true;
       _readyCompleter?.complete();
       _readyCompleter = null;
     });
-    _service.on(serviceStoppedEvent).listen((_) {
+    _service.on(MeshEvent.serviceStopped).listen((_) {
       _isReady = false;
       _isStopping = true;
     });
@@ -86,7 +84,7 @@ class BackgroundMeshService {
       if (!started) return false;
     } else if (!_isReady) {
       _readyCompleter = Completer<void>();
-      _service.invoke('request_snapshot');
+      _service.invoke(MeshCommand.requestSnapshot);
     }
 
     try {
@@ -122,48 +120,46 @@ void backgroundMeshServiceEntryPoint(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
 
-  final controller = NearbyProvider.backgroundController();
-  controller.setServiceEmitter(service.invoke);
-  controller.addListener(controller.emitServiceSnapshot);
+  final controller = MeshController(emit: service.invoke);
 
-  service.on('request_snapshot').listen((_) {
-    controller.emitServiceSnapshot();
-    service.invoke('service_ready');
+  String? str(Map<String, dynamic>? event, String key) =>
+      event?[key] is String ? event![key] as String : null;
+
+  service.on(MeshCommand.requestSnapshot).listen((_) {
+    controller.emitSnapshot();
+    service.invoke(MeshEvent.serviceReady);
   });
-  service.on('start_search').listen((event) async {
-    if (event == null) return;
-    await controller.startSearchingInBackground(
-      event['nodeId'] as String,
-      event['media'] as Map<dynamic, dynamic>?,
-      event['uiState'] as Map<dynamic, dynamic>?,
+  service.on(MeshCommand.startSearch).listen((event) async {
+    final nodeId = str(event, 'nodeId');
+    if (nodeId == null) return;
+    final uiState = event?['uiState'];
+    await controller.startSearching(
+      nodeId,
+      uiPresence: uiState is Map ? UiPresence.fromMap(uiState) : null,
     );
   });
-  service.on('stop_search').listen((_) async {
-    final stopped = await controller.stopSearchingInBackground();
+  service.on(MeshCommand.stopSearch).listen((_) async {
+    final stopped = await controller.stopSearching();
     // Un start_search que llegó durante el cierre quedó encolado detrás:
     // en ese caso el servicio sigue vivo con la sesión nueva.
-    if (stopped && !controller.isSearching && !controller.hasPendingStart) {
-      service.invoke(serviceStoppedEvent);
+    if (stopped && controller.canStopService) {
+      service.invoke(MeshEvent.serviceStopped);
       await service.stopSelf();
     }
   });
-  service.on('disconnect_endpoint').listen((event) async {
-    final endpointId = event?['endpointId'] as String?;
-    if (endpointId != null) {
-      await controller.disconnectEndpointInBackground(endpointId);
-    }
+  service.on(MeshCommand.disconnectEndpoint).listen((event) async {
+    final endpointId = str(event, 'endpointId');
+    if (endpointId != null) await controller.disconnectEndpoint(endpointId);
   });
-  service.on('send_envelope').listen((event) async {
-    final encoded = event?['envelope'] as String?;
-    if (encoded != null) {
-      await controller.sendEnvelopeInBackground(encoded);
-    }
+  service.on(MeshCommand.sendEnvelope).listen((event) async {
+    final encoded = str(event, 'envelope');
+    if (encoded != null) await controller.sendEnvelope(encoded);
   });
-  service.on('ui_state').listen((event) {
-    if (event != null) controller.updateUiPresence(event);
+  service.on(MeshCommand.uiState).listen((event) {
+    if (event != null) controller.updateUiPresence(UiPresence.fromMap(event));
   });
 
-  await controller.initializeBackgroundController();
-  controller.emitServiceSnapshot();
-  service.invoke('service_ready');
+  await controller.initialize();
+  controller.emitSnapshot();
+  service.invoke(MeshEvent.serviceReady);
 }
