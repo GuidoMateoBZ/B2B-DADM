@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>B2B Mesh — Hablá aunque no haya señal</title>
+  <meta name="description" content="Mensajería sin señal para recitales, la montaña, viajes y subsuelos. B2B Mesh conecta celulares entre sí sin Internet ni datos: cada mensaje salta de teléfono en teléfono hasta llegar. Gratis, sin cuenta, para Android (beta).">
+  <meta name="theme-color" content="#150E26">
+  <meta property="og:title" content="B2B Mesh — Hablá aunque no haya señal">
+  <meta property="og:description" content="Mensajería sin Internet: tu teléfono habla directo con los de alrededor. Donde no llega la señal, llega tu mensaje.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Marca temprana (antes de pintar) para estilos que dependen de JS y de soporte de scroll-driven animations
+    document.documentElement.classList.add("js");
+    if (!CSS.supports("(animation-timeline: view()) and (animation-range: entry)")) document.documentElement.classList.add("no-sda");
+  </script>
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Saltar al contenido</a>
+
+  <!-- Barra de progreso de lectura (decorativa) -->
+  <div class="progress" aria-hidden="true"></div>
+
+  <!-- ============ NAVBAR PÍLDORA ============ -->
+  <header class="nav">
+    <a class="nav__brand" href="#inicio" aria-label="B2B Mesh, ir al inicio">
+      <svg class="glyph-fill" viewBox="0 0 200 200" aria-hidden="true"><path d="M100 9.5L100 189.5M100 14.5L140 54.5M100 52L145.5 97.5M37.6 54.9L162.2 172.2M38 174.9L162.2 54.9"/></svg>
+      <span>B2B <b>Mesh</b></span>
+    </a>
+    <nav class="nav__links" aria-label="Secciones">
+      <a href="#problema">Por qué</a>
+      <a href="#como">Cómo funciona</a>
+      <a href="#usos">Usos</a>
+      <a href="#funciones">Funciones</a>
+      <a href="#roadmap">Lo que viene</a>
+      <a href="#faq">Preguntas</a>
+    </nav>
+    <a class="btn btn--neon btn--sm" href="https://github.com/GuidoMateoBZ/B2B-DADM/releases/latest" data-download>Descargar</a>
+  </header>
+
+  <main id="main">
+
+    <!-- ============ 0 · HERO ============ -->
+    <section class="hero dark" id="inicio" tabindex="-1" aria-labelledby="hero-title">
+      <canvas class="hero__mesh" aria-hidden="true"></canvas>
+      <div class="hero__glow" aria-hidden="true"></div>
+
+      <div class="wrap hero__grid">
+        <div class="hero__copy">
+          <p class="pill pill--neon"><span class="dot dot--live"></span> Beta · Mensajería sin señal para Android</p>
+          <h1 id="hero-title">Hablá aunque <span class="grad">no haya señal.</span></h1>
+          <p class="lead">En un recital, en la montaña, de viaje o en un subsuelo: B2B Mesh conecta celulares entre sí <strong>sin Internet, sin datos y sin antenas</strong>, y cada mensaje salta de teléfono en teléfono hasta llegar a quien querés.</p>
+          <div class="cta-row">
+            <a class="btn btn--neon" href="https://github.com/GuidoMateoBZ/B2B-DADM/releases/latest" data-download>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+              Descargar beta para Android
+            </a>
+            <a class="btn btn--ghost" href="#como">Ver cómo funciona</a>
+          </div>
+          <ul class="chips" aria-label="Ventajas">
+            <li>Gratis</li><li>Sin cuenta ni número</li><li>Sin Internet</li>
+          </ul>
+        </div>
+
+        <div class="hero__art">
+          <div class="glyph-card">
+            <svg class="glyph-outline glyph-outline--draw" viewBox="0 0 200 200" role="img" aria-label="Logo de B2B Mesh">
+              <mask id="g-hero" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="200">
+                <g class="g-outer"><path style="--d:0s" pathLength="1" d="M100 8L100 191"/><path style="--d:.25s" pathLength="1" d="M36.51 53.87L163.29 173.23"/><path style="--d:.4s" pathLength="1" d="M36.92 175.94L163.28 53.86"/><path style="--d:.6s" pathLength="1" d="M99.51 14.01L141.06 55.56"/><path style="--d:.75s" pathLength="1" d="M98.94 50.94L146.56 98.56"/></g>
+                <g class="g-inner"><path style="--d:0s" pathLength="1" d="M100 11L100 188"/><path style="--d:.25s" pathLength="1" d="M38.69 55.93L161.11 171.17"/><path style="--d:.4s" pathLength="1" d="M39.08 173.86L161.12 55.94"/><path style="--d:.6s" pathLength="1" d="M101.06 15.56L138.94 53.44"/><path style="--d:.75s" pathLength="1" d="M101.06 53.06L144.44 96.44"/></g>
+              </mask>
+              <rect width="200" height="200" mask="url(#g-hero)"/>
+            </svg>
+          </div>
+          <p class="wordmark" aria-hidden="true">B2B&nbsp;MESH</p>
+        </div>
+      </div>
+
+      <a class="scroll-cue" href="#problema" aria-label="Bajar a la siguiente sección"><span></span></a>
+    </section>
+
+    <!-- ============ 1 · PROBLEMA ============ -->
+    <section class="problem light" id="problema" tabindex="-1" aria-labelledby="problem-title">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="pill">Por qué</p>
+          <h2 id="problem-title">Quedarte sin señal pasa más seguido de lo que creés.</h2>
+        </header>
+
+        <div class="story" data-story="problem">
+          <div class="story__visual" data-stage="0">
+            <div class="signal-card">
+              <div class="signal-card__bar">
+                <span class="place" aria-hidden="true"><span>📍 Recital</span><span>📍 Cerro</span><span>📍 Subsuelo</span><span>📍 Tormenta</span></span>
+                <span class="signal-card__net">
+                  <span class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                  <span class="net-label" aria-hidden="true"><span>E</span><span>Sin servicio</span><span>Sin servicio</span><span>Sin servicio</span></span>
+                </span>
+              </div>
+              <div class="signal-card__body" aria-hidden="true">
+                <div class="notif notif--warn"><b>Grupo Recital · enviando…</b><span>¿Dónde están? Estoy cerca del escenario</span></div>
+                <div class="notif notif--err"><b>No enviado · Grupo Trekking</b><span>Nos adelantamos, los esperamos en el refugio</span></div>
+                <div class="notif notif--err"><b>No enviado · Juli</b><span>Bajo al estacionamiento, esperame ahí</span></div>
+                <div class="notif notif--err"><b>Sin conexión</b><span>Corte de luz en tu zona: la red no responde</span></div>
+              </div>
+            </div>
+          </div>
+
+          <ol class="story__steps">
+            <li class="step" data-step="0">
+              <h3>En el recital, la antena no da abasto.</h3>
+              <p>Miles de personas comparten la misma antena: los mensajes se quedan en «enviando…» y no encontrás a tu grupo.</p>
+            </li>
+            <li class="step" data-step="1">
+              <h3>En la montaña, la ruta o el camping.</h3>
+              <p>Apenas salís de la ciudad aparece el «Sin servicio», justo cuando el grupo se separa.</p>
+            </li>
+            <li class="step" data-step="2">
+              <h3>En subsuelos, estacionamientos y edificios.</h3>
+              <p>El hormigón no deja pasar la señal, aunque tu gente esté a pocos metros.</p>
+            </li>
+            <li class="step" data-step="3">
+              <h3>Y cuando se corta todo.</h3>
+              <p>Tormentas, cortes de luz o emergencias: si se cae la red, se cae para todos.</p>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bisagra -->
+    <section class="bridge dark" aria-label="La solución">
+      <p class="bridge__text reveal">En todos esos casos, <span class="grad">B2B Mesh</span> sigue funcionando: <br>donde no hay señal, <em>tu teléfono es la red.</em></p>
+    </section>
+
+    <!-- ============ 2 · CÓMO FUNCIONA ============ -->
+    <section class="how dark" id="como" tabindex="-1" aria-labelledby="how-title">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="pill pill--neon">Cómo funciona</p>
+          <h2 id="how-title">Tres pasos. Cero configuración.</h2>
+        </header>
+
+        <div class="story" data-story="how">
+          <div class="story__visual" data-stage="0">
+            <div class="phone" aria-hidden="true">
+              <div class="phone__notch"></div>
+              <!-- Pantalla 1: inicio con Node ID -->
+              <div class="screen screen--home">
+                <div class="app-bar"><b>B2B Mesh</b><span class="app-bar__icons"><i class="ic-contacts"></i><i class="ic-sos">*</i><i>⋮</i></span></div>
+                <div class="node-card"><span class="node-card__ic">◎</span><div><small>Mi Node ID</small><b>a070a957-71cb</b></div></div>
+                <div class="conn-card"><span class="conn-dot"></span><b>Conectado · 2 nodos</b></div>
+                <small class="list-title">Conversaciones</small>
+                <div class="convo"><span class="avatar">Lu</span><div><b>Lucía</b><small>¿Dónde nos encontramos?</small></div><time>20:04</time></div>
+                <div class="convo"><span class="avatar">GT</span><div><b>Grupo Trekking</b><small>Salimos 8 am del camping</small></div><time>18:45</time></div>
+                <span class="fab">+ Nuevo chat</span>
+              </div>
+              <!-- Pantalla 2: QR -->
+              <div class="screen screen--qr">
+                <div class="app-bar"><b>Agregar contacto</b></div>
+                <div class="qr-frame">
+                  <svg viewBox="-2 -2 29 29" class="qr"><rect x="-2" y="-2" width="29" height="29" fill="#fff"/><path fill="#1C1B1F" d="M0 0h7v1h-7zM8 0h2v1h-2zM11 0h1v1h-1zM13 0h2v1h-2zM16 0h1v1h-1zM18 0h7v1h-7zM0 1h1v1h-1zM6 1h1v1h-1zM8 1h4v1h-4zM13 1h2v1h-2zM18 1h1v1h-1zM24 1h1v1h-1zM0 2h1v1h-1zM2 2h3v1h-3zM6 2h1v1h-1zM9 2h1v1h-1zM11 2h1v1h-1zM13 2h4v1h-4zM18 2h1v1h-1zM20 2h3v1h-3zM24 2h1v1h-1zM0 3h1v1h-1zM2 3h3v1h-3zM6 3h1v1h-1zM9 3h1v1h-1zM12 3h1v1h-1zM14 3h3v1h-3zM18 3h1v1h-1zM20 3h3v1h-3zM24 3h1v1h-1zM0 4h1v1h-1zM2 4h3v1h-3zM6 4h1v1h-1zM9 4h2v1h-2zM12 4h2v1h-2zM16 4h1v1h-1zM18 4h1v1h-1zM20 4h3v1h-3zM24 4h1v1h-1zM0 5h1v1h-1zM6 5h1v1h-1zM12 5h1v1h-1zM14 5h2v1h-2zM18 5h1v1h-1zM24 5h1v1h-1zM0 6h7v1h-7zM8 6h1v1h-1zM10 6h1v1h-1zM15 6h1v1h-1zM18 6h7v1h-7zM10 7h1v1h-1zM13 7h1v1h-1zM15 7h1v1h-1zM3 8h2v1h-2zM6 8h5v1h-5zM12 8h3v1h-3zM16 8h2v1h-2zM22 8h3v1h-3zM2 9h4v1h-4zM8 9h4v1h-4zM18 9h1v1h-1zM23 9h2v1h-2zM0 10h1v1h-1zM2 10h11v1h-11zM15 10h5v1h-5zM22 10h1v1h-1zM24 10h1v1h-1zM0 11h3v1h-3zM4 11h2v1h-2zM8 11h1v1h-1zM10 11h1v1h-1zM15 11h3v1h-3zM21 11h2v1h-2zM4 12h1v1h-1zM6 12h5v1h-5zM13 12h1v1h-1zM17 12h5v1h-5zM0 13h1v1h-1zM3 13h1v1h-1zM8 13h2v1h-2zM11 13h1v1h-1zM14 13h2v1h-2zM18 13h3v1h-3zM23 13h1v1h-1zM2 14h1v1h-1zM4 14h2v1h-2zM10 14h1v1h-1zM13 14h4v1h-4zM18 14h3v1h-3zM22 14h2v1h-2zM1 15h1v1h-1zM6 15h4v1h-4zM11 15h2v1h-2zM15 15h1v1h-1zM19 15h1v1h-1zM21 15h2v1h-2zM3 16h1v1h-1zM8 16h1v1h-1zM10 16h1v1h-1zM15 16h1v1h-1zM19 16h6v1h-6zM11 17h1v1h-1zM14 17h1v1h-1zM17 17h1v1h-1zM19 17h1v1h-1zM23 17h2v1h-2zM0 18h7v1h-7zM9 18h3v1h-3zM13 18h1v1h-1zM15 18h3v1h-3zM20 18h1v1h-1zM24 18h1v1h-1zM0 19h1v1h-1zM6 19h1v1h-1zM8 19h2v1h-2zM11 19h3v1h-3zM16 19h2v1h-2zM21 19h2v1h-2zM24 19h1v1h-1zM0 20h1v1h-1zM2 20h3v1h-3zM6 20h1v1h-1zM8 20h1v1h-1zM12 20h1v1h-1zM14 20h1v1h-1zM16 20h2v1h-2zM20 20h2v1h-2zM23 20h2v1h-2zM0 21h1v1h-1zM2 21h3v1h-3zM6 21h1v1h-1zM8 21h5v1h-5zM14 21h1v1h-1zM16 21h5v1h-5zM23 21h2v1h-2zM0 22h1v1h-1zM2 22h3v1h-3zM6 22h1v1h-1zM9 22h1v1h-1zM11 22h1v1h-1zM14 22h1v1h-1zM18 22h1v1h-1zM22 22h3v1h-3zM0 23h1v1h-1zM6 23h1v1h-1zM8 23h2v1h-2zM11 23h3v1h-3zM17 23h7v1h-7zM0 24h7v1h-7zM10 24h1v1h-1zM12 24h5v1h-5zM18 24h1v1h-1zM20 24h5v1h-5z"/></svg>
+                  <span class="qr-scan"></span>
+                </div>
+                <p class="qr-caption">Apuntá la cámara al código de tu contacto</p>
+                <div class="contact-saved"><span class="avatar">Lu</span><div><b>Lucía</b><small>Guardado en tu agenda</small></div><span class="ok">✓</span></div>
+              </div>
+              <!-- Pantalla 3: chat -->
+              <div class="screen screen--chat">
+                <div class="app-bar"><b>← Lucía</b><small class="hops-badge">vía 2 saltos</small></div>
+                <div class="bubble bubble--in">¿Dónde están? No los veo 😅</div>
+                <div class="bubble bubble--out">A la izquierda del escenario, al lado de la torre de sonido</div>
+                <div class="bubble bubble--in">¡Ahí los vi! Voy para allá 🙌</div>
+                <div class="bubble bubble--out">Te guardamos lugar 🎶</div>
+                <div class="composer"><span>Escribí un mensaje…</span><i>➤</i></div>
+              </div>
+            </div>
+
+            <!-- Diagrama de saltos -->
+            <div class="hops" aria-hidden="true">
+              <div class="hop hop--a"><span>Vos</span><small>ttl 3</small></div>
+              <div class="hop hop--b"><span>Vecino</span><small>ttl 2</small></div>
+              <div class="hop hop--c"><span>Lucía</span><small>✓ llegó</small></div>
+              <span class="packet"></span>
+            </div>
+          </div>
+
+          <ol class="story__steps">
+            <li class="step" data-step="0">
+              <span class="step__num">01</span>
+              <h3>Abrí la app. Ya tenés identidad.</h3>
+              <p>Tu teléfono genera un <strong>Node ID</strong> único. Sin número de teléfono, sin email, sin crear cuenta.</p>
+            </li>
+            <li class="step" data-step="1">
+              <span class="step__num">02</span>
+              <h3>Escaneá el QR de tu gente.</h3>
+              <p>Agregás contactos apuntando la cámara y les ponés el nombre que quieras. La agenda queda guardada en tu teléfono.</p>
+            </li>
+            <li class="step" data-step="2">
+              <span class="step__num">03</span>
+              <h3>Escribí. El mensaje encuentra el camino.</h3>
+              <p>Si tu contacto está cerca, le llega directo. Si no, <strong>salta por los teléfonos que haya en el medio</strong> hasta llegar. Nadie tiene que hacer nada.</p>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 4 · USOS ============ -->
+    <section class="uses dark" id="usos" tabindex="-1" aria-labelledby="uses-title">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="pill pill--neon">Para qué sirve</p>
+          <h2 id="uses-title">Para todos los días en que la señal no alcanza.</h2>
+        </header>
+        <ul class="stack">
+          <li class="use" style="--i:0">
+            <div class="use__text">
+              <span class="use__tag">Eventos</span>
+              <h3>Recitales, festivales y estadios.</h3>
+              <p>Cuando miles de personas saturan la antena, encontrá a tus amigos con mensajes que van de teléfono en teléfono.</p>
+            </div>
+            <svg class="use__art" viewBox="0 0 200 120" aria-hidden="true"><path d="M60 15 L100 60 L140 15" class="beam"/><path d="M75 15 L100 60 L125 15" class="beam"/><g class="crowd"><circle cx="20" cy="95" r="9"/><circle cx="45" cy="88" r="9"/><circle cx="70" cy="96" r="9"/><circle cx="95" cy="86" r="9"/><circle cx="120" cy="95" r="9"/><circle cx="145" cy="88" r="9"/><circle cx="170" cy="96" r="9"/></g></svg>
+          </li>
+          <li class="use" style="--i:1">
+            <div class="use__text">
+              <span class="use__tag">Naturaleza</span>
+              <h3>Montaña, camping y rutas.</h3>
+              <p>Mantené al grupo comunicado en el trekking, el camping o la pesca, donde el celular dice «Sin servicio».</p>
+            </div>
+            <svg class="use__art" viewBox="0 0 200 120" aria-hidden="true"><path d="M0 110 L55 40 L80 70 L115 20 L170 110 Z"/><path d="M104 34 L115 20 L126 34" class="snow"/><circle cx="170" cy="28" r="10"/></svg>
+          </li>
+          <li class="use" style="--i:2">
+            <div class="use__text">
+              <span class="use__tag">Viajes</span>
+              <h3>De viaje, sin roaming.</h3>
+              <p>Coordiná con tu grupo en otro país, en un crucero o en un micro de larga distancia sin gastar datos.</p>
+            </div>
+            <svg class="use__art" viewBox="0 0 200 120" aria-hidden="true"><circle cx="100" cy="60" r="48"/><ellipse cx="100" cy="60" rx="20" ry="48"/><path d="M52 60 H148 M60 36 H140 M60 84 H140"/><path d="M150 18 l18 6 -18 6 4 -6 z" class="snow"/></svg>
+          </li>
+          <li class="use" style="--i:3">
+            <div class="use__text">
+              <span class="use__tag">Bajo techo</span>
+              <h3>Campus, subsuelos y edificios.</h3>
+              <p>Para avisar al toque en la facultad, el estacionamiento o el subte, donde no entra la señal ni hay Wi-Fi.</p>
+            </div>
+            <svg class="use__art" viewBox="0 0 200 120" aria-hidden="true"><rect x="40" y="20" width="120" height="90" rx="4"/><path d="M40 50 H160 M40 80 H160 M80 20 V110 M120 20 V110"/></svg>
+          </li>
+          <li class="use use--sos" style="--i:4">
+            <div class="use__text">
+              <span class="use__tag">Y si se complica</span>
+              <h3>Cortes, tormentas y emergencias.</h3>
+              <p>Si se cae la red de telefonía, B2B Mesh sigue funcionando con la batería de los teléfonos para coordinar con vecinos y familia.</p>
+            </div>
+            <svg class="use__art" viewBox="0 0 200 120" aria-hidden="true"><path d="M0 90 L30 90 L40 60 L50 110 L62 40 L74 100 L86 70 L96 90 L200 90"/><circle cx="160" cy="45" r="16"/><circle cx="160" cy="45" r="30" class="ring"/></svg>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 3 · FUNCIONES ============ -->
+    <section class="features light" id="funciones" tabindex="-1" aria-labelledby="features-title">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="pill">Funciones</p>
+          <h2 id="features-title">Todo lo que necesitás cuando no hay nada más.</h2>
+        </header>
+
+        <ul class="bento">
+          <li class="card card--wide reveal" style="--i:0">
+            <span class="card__ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M8.5 16.5a5 5 0 017 0M5 13a10 10 0 015.2-2.8M19 13a10 10 0 00-3.4-2.3M2 8.8a15 15 0 014.3-2.6M22 8.8A15 15 0 0010.5 5M12 20h.01"/></svg></span>
+            <h3>100&nbsp;% sin Internet</h3>
+            <p>No usa datos móviles, ni Wi-Fi de un router, ni chip con saldo. Los teléfonos hablan directamente entre ellos por Bluetooth y Wi-Fi Direct.</p>
+          </li>
+          <li class="card reveal" style="--i:1">
+            <span class="card__ic"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="2.2"/><circle cx="12" cy="6" r="2.2"/><circle cx="19" cy="12" r="2.2"/><path d="M6.7 10.6l3.6-3.2M13.7 7.4l3.6 3.2"/></svg></span>
+            <h3>Multi-salto</h3>
+            <p>Si no estás cerca de tu contacto, el mensaje viaja por otros teléfonos hasta llegar.</p>
+          </li>
+          <li class="card card--sos card--tall reveal" style="--i:2">
+            <span class="card__ic"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M19.8 7.5L4.2 16.5M19.8 16.5L4.2 7.5"/></svg></span>
+            <h3>SOS + ubicación</h3>
+            <p>Un mensaje de emergencia que llega a <strong>todos</strong> los teléfonos alcanzables, con tus coordenadas GPS listas para abrir en el mapa.</p>
+            <a class="link-arrow" href="#sos">Ver cómo funciona el SOS</a>
+          </li>
+          <li class="card reveal" style="--i:3">
+            <span class="card__ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6" height="6" rx="1"/><rect x="14" y="4" width="6" height="6" rx="1"/><rect x="4" y="14" width="6" height="6" rx="1"/><path d="M14 14h2v2M20 14v6h-6v-2M17 17h.01"/></svg></span>
+            <h3>Identidad sin cuenta</h3>
+            <p>Tu Node ID y un código QR. Nada de número de teléfono ni registros.</p>
+          </li>
+          <li class="card reveal" style="--i:4">
+            <span class="card__ic"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 6h4M12 11v3m0 3h.01"/></svg></span>
+            <h3>Con la pantalla bloqueada</h3>
+            <p>La app sigue recibiendo y reenviando mensajes en segundo plano. Tu teléfono ayuda a la red aunque no lo estés usando.</p>
+          </li>
+          <li class="card card--dark card--wide reveal" style="--i:5">
+            <span class="card__ic"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></span>
+            <h3>Tus chats, en tu teléfono</h3>
+            <p>Conversaciones, contactos e historial se guardan localmente. No hay nube ni servidor donde terminen tus datos.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 5 · SOS ============ -->
+    <section class="sos" id="sos" tabindex="-1" aria-labelledby="sos-title">
+      <div class="wrap sos__grid">
+        <div class="sos__copy reveal">
+          <p class="pill pill--sos">SOS</p>
+          <h2 id="sos-title">Si algo se complica, <br>todos alrededor se enteran.</h2>
+          <p class="lead">¿Alguien se lastimó en el cerro? ¿Se perdió un chico en el festival? Con un toque, el SOS llega a <strong>todos los teléfonos alcanzables</strong>, que a su vez lo reenvían, con tu ubicación GPS lista para abrir en el mapa.</p>
+          <ul class="ticks">
+            <li>Cada teléfono lo reenvía una sola vez: la alerta se propaga sin saturar la red.</li>
+            <li>Las coordenadas se obtienen sin Internet, desde el GPS del teléfono.</li>
+            <li>Llega como notificación aunque la app esté en segundo plano.</li>
+          </ul>
+          <p class="disclaimer">B2B Mesh es una herramienta complementaria: no reemplaza a los servicios de emergencia (911, 107, 100) ni garantiza que un mensaje llegue.</p>
+        </div>
+        <div class="sos__art" aria-hidden="true">
+          <span class="wave"></span><span class="wave"></span><span class="wave"></span>
+          <span class="sos-node" style="--x:-140px;--y:-90px"></span>
+          <span class="sos-node" style="--x:150px;--y:-60px"></span>
+          <span class="sos-node" style="--x:-110px;--y:120px"></span>
+          <span class="sos-node" style="--x:130px;--y:110px"></span>
+          <span class="sos-node" style="--x:10px;--y:-170px"></span>
+          <span class="sos-btn">SOS</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 6 · LA RED SOS VOS ============ -->
+    <section class="network light" id="red" tabindex="-1" aria-labelledby="net-title">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="pill">Efecto red</p>
+          <h2 id="net-title">La red sos vos (y todos los demás).</h2>
+          <p class="lead">Si tu contacto está cerca —hasta unos 100&nbsp;m— se hablan directo. Si está más lejos, el mensaje pasa por otros teléfonos con la app, <strong>que mientras tanto la están usando para sus propias charlas.</strong> Nadie tiene que hacer de antena: todos se ayudan sin darse cuenta. Probalo:</p>
+        </header>
+
+        <div class="net-demo reveal">
+          <div class="net-demo__bar">
+            <label for="net-people">Otras personas con la app alrededor: <output id="net-count" for="net-people">0</output></label>
+            <input id="net-people" type="range" min="0" max="8" step="1" value="0">
+          </div>
+          <svg class="net-demo__svg" viewBox="0 0 300 150" role="img" aria-labelledby="net-status">
+            <g class="net-ranges"></g>
+            <g class="net-links"></g>
+            <g class="net-path"></g>
+            <g class="net-nodes"></g>
+            <g class="net-scale" aria-hidden="true"><path d="M165 10 h100"/><text x="215" y="7" text-anchor="middle">100 m</text></g>
+          </svg>
+          <p class="net-demo__status" id="net-status" role="status"></p>
+          <ul class="net-legend" aria-label="Estado de cada conversación"></ul>
+        </div>
+
+        <div class="share reveal">
+          <p><strong>Invitá a tu gente.</strong> Cada persona que la instala acerca a todos los demás.</p>
+          <button class="btn btn--ink" type="button" data-share>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="M8.2 10.8l7.6-4.4M8.2 13.2l7.6 4.4"/></svg>
+            Compartir B2B Mesh
+          </button>
+          <span class="share__msg" role="status" data-share-msg></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 7 · PRIVACIDAD ============ -->
+    <section class="privacy dark" id="privacidad" tabindex="-1" aria-labelledby="privacy-title">
+      <div class="wrap">
+        <h2 class="visually-hidden" id="privacy-title">Privacidad</h2>
+        <ul class="big-words">
+          <li class="reveal"><span class="big">Sin servidores.</span><p>Los mensajes van de teléfono a teléfono. No pasan por ninguna empresa.</p></li>
+          <li class="reveal"><span class="big">Sin cuentas.</span><p>Tu identidad es un código aleatorio. No pedimos número, email ni nombre real.</p></li>
+          <li class="reveal"><span class="big">Sin rastreo.</span><p>Tus chats y contactos se guardan solo en tu teléfono. Tu ubicación solo se envía cuando vos mandás un SOS.</p></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ============ 8 · PARA CURIOSOS ============ -->
+    <section class="tech light" id="tecnologia" tabindex="-1" aria-labelledby="tech-title">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="pill">Para curiosos</p>
+          <h2 id="tech-title">Ingeniería de verdad, abajo del capó.</h2>
+          <p class="lead">B2B Mesh es un proyecto de la cátedra Desarrollo de Aplicaciones para Dispositivos Móviles (DADM) de la UNPSJB.</p>
+        </header>
+        <ul class="tech-grid">
+          <li class="tech-card reveal" style="--i:0"><code>P2P_CLUSTER</code><h3>Google Nearby Connections</h3><p>Cada teléfono anuncia su presencia y busca vecinos al mismo tiempo, formando una malla de muchos a muchos.</p></li>
+          <li class="tech-card reveal" style="--i:1"><code>BLE ➔ Wi-Fi Direct</code><h3>Radio inteligente</h3><p>Descubre por Bluetooth de bajo consumo y sube a Wi-Fi Direct para transmitir.</p></li>
+          <li class="tech-card reveal" style="--i:2"><code>Envelope · ttl 3</code><h3>Enrutamiento por saltos</h3><p>Cada mensaje lleva un ID único y un contador de saltos: se deduplica y no circula para siempre.</p></li>
+          <li class="tech-card tech-card--dark reveal" style="--i:3"><code>Flutter + Kotlin</code><h3>Servicio en primer plano</h3><p>El motor de la red corre en un proceso aparte, así sigue enrutando con la pantalla apagada.</p></li>
+        </ul>
+        <p class="tech-repo reveal"><a class="link-arrow" href="https://github.com/GuidoMateoBZ/B2B-DADM">Ver el código en GitHub</a></p>
+      </div>
+    </section>
+
+    <!-- ============ 9 · EN DESARROLLO ============ -->
+    <section class="roadmap dark" id="roadmap" tabindex="-1" aria-labelledby="roadmap-title">
+      <div class="wrap">
+        <header class="section-head reveal">
+          <p class="pill pill--neon">Beta · en desarrollo</p>
+          <h2 id="roadmap-title">Recién empieza. Esto es lo que viene.</h2>
+          <p class="lead">B2B Mesh está en desarrollo activo. Hoy ya podés chatear sin señal, y estas son las próximas funciones en las que estamos trabajando.</p>
+        </header>
+        <div class="roadmap__grid">
+          <div class="roadmap__col reveal">
+            <h3 class="roadmap__title"><span class="status status--now">Disponible</span> Hoy</h3>
+            <ul class="roadmap__list">
+              <li><b>Mensajes de texto 1 a 1</b><span>Directos o saltando por otros teléfonos hasta llegar.</span></li>
+              <li><b>SOS con ubicación</b><span>Alerta a todos los teléfonos alcanzables con tus coordenadas.</span></li>
+              <li><b>Contactos por QR</b><span>Agenda local con los nombres que elijas.</span></li>
+              <li><b>Funciona en segundo plano</b><span>Recibe y reenvía mensajes con la pantalla bloqueada.</span></li>
+            </ul>
+          </div>
+          <div class="roadmap__col roadmap__col--next reveal" style="--i:1">
+            <h3 class="roadmap__title"><span class="status status--next">En camino</span> Próximamente</h3>
+            <ul class="roadmap__list">
+              <li><b>Cifrado de extremo a extremo</b><span>Las claves se van a intercambiar al escanear el QR del contacto: solo vos y esa persona van a poder leer la conversación, aunque pase por otros teléfonos.</span></li>
+              <li><b>Compartir ubicación en el chat</b><span>Mandarle tu ubicación a un contacto en cualquier momento, no solo en un SOS.</span></li>
+              <li><b>Fotos, audios y archivos</b><span>Enviar contenido multimedia por la red, además de texto.</span></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 9 · FAQ ============ -->
+    <section class="faq light" id="faq" tabindex="-1" aria-labelledby="faq-title">
+      <div class="wrap wrap--narrow">
+        <header class="section-head reveal">
+          <p class="pill">Preguntas frecuentes</p>
+          <h2 id="faq-title">Lo que te estás preguntando.</h2>
+        </header>
+        <div class="accordion reveal">
+          <details>
+            <summary>¿Necesito Internet o datos móviles?</summary>
+            <p>No. B2B Mesh usa el Bluetooth y el Wi-Fi Direct de tu teléfono para hablar directamente con otros teléfonos cercanos. No necesita chip, saldo, router ni conexión a Internet.</p>
+          </details>
+          <details>
+            <summary>¿Qué alcance tiene?</summary>
+            <p>Entre 10 y 100 metros por salto, según paredes y obstáculos. Un mensaje puede atravesar hasta 3 saltos, así que el alcance real depende de cuántas personas con la app haya en el camino.</p>
+          </details>
+          <details>
+            <summary>¿Funciona en iPhone?</summary>
+            <p>Por ahora no: B2B Mesh está disponible solo para Android (versión 7.0 o superior).</p>
+          </details>
+          <details>
+            <summary>¿Gasta mucha batería?</summary>
+            <p>La búsqueda de teléfonos cercanos usa Bluetooth de bajo consumo, y el Wi-Fi Direct se activa solo para transmitir. Igual, como toda app que mantiene la radio activa en segundo plano, consume algo de batería: podés desconectarte cuando no la necesites.</p>
+          </details>
+          <details>
+            <summary>¿Quién puede leer mis mensajes?</summary>
+            <p>No pasan por ningún servidor ni empresa: van de teléfono en teléfono y se guardan solo en los dispositivos. Por ahora no tienen cifrado de extremo a extremo y, para llegar, pueden atravesar teléfonos de otras personas que hacen de puente, así que no la uses para datos sensibles como contraseñas o datos bancarios. El cifrado de extremo a extremo, con claves que se intercambian al escanear el QR, es una de las próximas funciones.</p>
+          </details>
+          <details>
+            <summary>¿Puedo mandar fotos o mi ubicación?</summary>
+            <p>Por ahora B2B Mesh envía mensajes de texto, y tu ubicación viaja en los mensajes SOS. Compartir la ubicación en un chat y enviar fotos, audios y archivos son funciones en desarrollo.</p>
+          </details>
+          <details>
+            <summary>¿Reemplaza llamar a emergencias?</summary>
+            <p>No. Es una herramienta complementaria para cuando no hay señal: si podés comunicarte con el 911, 107 o 100, hacelo. B2B Mesh no garantiza que un mensaje llegue, porque depende de que haya teléfonos con la app cerca.</p>
+          </details>
+          <details>
+            <summary>¿Es gratis?</summary>
+            <p>Sí. Es un proyecto académico, sin publicidad ni suscripciones. Está en versión beta, así que puede tener errores: si encontrás alguno, contanos en GitHub.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ 10 · CTA FINAL ============ -->
+    <section class="final dark" id="descargar" tabindex="-1" aria-labelledby="final-title">
+      <div class="wrap final__inner">
+        <svg class="glyph-outline glyph-outline--scroll" viewBox="0 0 200 200" aria-hidden="true">
+          <mask id="g-final" maskUnits="userSpaceOnUse" x="0" y="0" width="200" height="200">
+            <g class="g-outer"><path pathLength="1" d="M100 8L100 191"/><path pathLength="1" d="M36.51 53.87L163.29 173.23"/><path pathLength="1" d="M36.92 175.94L163.28 53.86"/><path pathLength="1" d="M99.51 14.01L141.06 55.56"/><path pathLength="1" d="M98.94 50.94L146.56 98.56"/></g>
+            <g class="g-inner"><path pathLength="1" d="M100 11L100 188"/><path pathLength="1" d="M38.69 55.93L161.11 171.17"/><path pathLength="1" d="M39.08 173.86L161.12 55.94"/><path pathLength="1" d="M101.06 15.56L138.94 53.44"/><path pathLength="1" d="M101.06 53.06L144.44 96.44"/></g>
+          </mask>
+          <rect width="200" height="200" mask="url(#g-final)"/>
+        </svg>
+        <h2 id="final-title">Donde no llega la señal, <br><span class="grad">llega tu mensaje.</span></h2>
+        <p class="lead">Gratis, sin cuenta y lista en un minuto. Versión beta para Android 7.0 o superior.</p>
+        <div class="cta-row cta-row--center">
+          <a class="btn btn--neon btn--lg" href="https://github.com/GuidoMateoBZ/B2B-DADM/releases/latest" data-download>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11m0 0l-4.5-4.5M12 15l4.5-4.5M5 20h14"/></svg>
+            Descargar APK (beta)
+          </a>
+          <button class="btn btn--ghost btn--lg" type="button" data-share>Compartir con tu gente</button>
+        </div>
+        <span class="share__msg" role="status" data-share-msg></span>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="wrap footer__inner">
+      <span class="footer__brand">
+        <svg class="glyph-fill" viewBox="0 0 200 200" aria-hidden="true"><path d="M100 9.5L100 189.5M100 14.5L140 54.5M100 52L145.5 97.5M37.6 54.9L162.2 172.2M38 174.9L162.2 54.9"/></svg>
+        B2B Mesh <span class="beta">beta</span>
+      </span>
+      <span>Proyecto académico · DADM · UNPSJB · 2026</span>
+      <span class="footer__links">
+        <a href="https://github.com/GuidoMateoBZ/B2B-DADM">GitHub</a>
+        <button class="footer__motion" type="button" data-motion-toggle>Pausar animaciones</button>
+      </span>
+      <p class="footer__legal">Bluetooth® es una marca registrada de Bluetooth SIG, Inc. Android y Google Nearby son marcas de Google LLC. B2B Mesh es un proyecto independiente y no está afiliado a esas empresas.</p>
+    </div>
+  </footer>
+</body>
+</html>
