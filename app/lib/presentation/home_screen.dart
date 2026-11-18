@@ -62,11 +62,17 @@ class _HomeScreenState extends State<HomeScreen> {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 16),
-            QrImageView(
-              data: nodeId,
-              version: QrVersions.auto,
-              size: 220,
-              backgroundColor: Colors.white,
+            // AlertDialog mide su contenido con IntrinsicWidth y QrImageView
+            // usa un LayoutBuilder, que no admite medidas intrínsecas: sin un
+            // tamaño fijo el layout falla y el diálogo no se pinta.
+            SizedBox.square(
+              dimension: 220,
+              child: QrImageView(
+                data: nodeId,
+                version: QrVersions.auto,
+                size: 220,
+                backgroundColor: Colors.white,
+              ),
             ),
             const SizedBox(height: 12),
             SelectableText(
