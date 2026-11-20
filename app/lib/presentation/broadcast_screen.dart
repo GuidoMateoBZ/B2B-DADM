@@ -63,6 +63,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        debugPrint('[BroadcastScreen] SOS cancelado: servicio de ubicación desactivado');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -73,11 +74,19 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         return;
       }
 
+      // Sin Wi-Fi ni datos (p. ej. modo avión) solo queda el GPS, que en un
+      // arranque en frío puede tardar bastante más de 12 s en conseguir señal.
+      // En una próxima versión se podría usar este tiempo extendido solo en
+      // modo avión y volver a un límite más corto cuando hay red disponible.
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 12),
+          timeLimit: Duration(seconds: 30),
         ),
+      );
+      debugPrint(
+        '[BroadcastScreen] Ubicación obtenida para SOS: '
+        'precisión=${position.accuracy.toStringAsFixed(0)} m',
       );
 
       final lat = position.latitude;
@@ -89,7 +98,8 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         await context.read<NearbyProvider>().sendBroadcast(sosText);
         _scrollToBottom();
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[BroadcastScreen] No se pudo obtener la ubicación para SOS: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('No se pudo obtener la ubicación: $e')),
