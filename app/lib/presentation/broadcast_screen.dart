@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
@@ -63,6 +65,7 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
+        debugPrint('[BroadcastScreen] SOS cancelado: servicio de ubicación desactivado');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -73,23 +76,70 @@ class _BroadcastScreenState extends State<BroadcastScreen> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 12),
-        ),
-      );
+      // Con red, la ubicación suele llegar en ~10 s. Sin Wi-Fi ni datos
+      // (p. ej. modo avión) solo queda el GPS, que bajo techo puede no
+      // conseguir señal nunca: en ese caso no conviene demorar el SOS y se
+      // recurre a la última ubicación conocida.
+      // En una próxima versión se podría dar más tiempo al GPS solo en modo
+      // avión y mantener un límite más corto cuando hay red disponible.
+      Position position;
+      bool isLastKnown = false;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 15),
+          ),
+        );
+        debugPrint(
+          '[BroadcastScreen] Ubicación obtenida para SOS: '
+          'precisión=${position.accuracy.toStringAsFixed(0)} m',
+        );
+      } on TimeoutException {
+        final lastKnown = await Geolocator.getLastKnownPosition();
+        if (lastKnown == null) {
+          debugPrint(
+            '[BroadcastScreen] SOS cancelado: sin señal GPS y sin ubicación guardada',
+          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'No se pudo obtener la ubicación: no hay señal GPS ni una '
+                  'ubicación guardada. Probá al aire libre o cerca de una ventana.',
+                ),
+              ),
+            );
+          }
+          return;
+        }
+        position = lastKnown;
+        isLastKnown = true;
+        debugPrint(
+          '[BroadcastScreen] Sin señal GPS: se usa la última ubicación conocida '
+          'de ${position.timestamp.toIso8601String()} '
+          '(precisión=${position.accuracy.toStringAsFixed(0)} m)',
+        );
+      }
 
       final lat = position.latitude;
       final lng = position.longitude;
       final mapsLink = 'https://maps.google.com/?q=$lat,$lng';
-      final sosText = '🆘 SOS — Necesito ayuda\n📍 Mi ubicación: $mapsLink';
+      // La aclaración va en su propia línea para que la tarjeta SOS (también
+      // en versiones anteriores) siga extrayendo el link de la línea 📍.
+      final lastKnownNote = isLastKnown
+          ? '\n⚠️ Última ubicación conocida, de las '
+                '${_formatTimestamp(position.timestamp.millisecondsSinceEpoch)}'
+          : '';
+      final sosText =
+          '🆘 SOS — Necesito ayuda$lastKnownNote\n📍 Mi ubicación: $mapsLink';
 
       if (mounted) {
         await context.read<NearbyProvider>().sendBroadcast(sosText);
         _scrollToBottom();
       }
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint('[BroadcastScreen] No se pudo obtener la ubicación para SOS: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('No se pudo obtener la ubicación: $e')),
